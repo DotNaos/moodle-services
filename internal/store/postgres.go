@@ -181,6 +181,15 @@ func (s *Store) CreateAPIKey(ctx context.Context, userID string, name string, ke
 	return record, err
 }
 
+func (s *Store) RevokeActiveAPIKeysForUser(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		update api_keys
+		set revoked_at = now()
+		where user_id = $1 and revoked_at is null
+	`, userID)
+	return err
+}
+
 func (s *Store) UserForAPIKey(ctx context.Context, key string, hashSecret []byte) (User, error) {
 	var user User
 	err := s.db.QueryRowContext(ctx, `
