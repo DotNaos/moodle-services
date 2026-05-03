@@ -285,12 +285,25 @@ func uploadProcessedBackupFiles(ctx context.Context, uploader backupDriveUploade
 				continue
 			}
 			path := filepath.Join(textDir, entry.Name())
+			if ok, err := isBackupMarkdownFile(path); err != nil {
+				return err
+			} else if !ok {
+				continue
+			}
 			if _, err := uploader.UploadFile(ctx, path, folderID, course.Slug+"--materials-text--"+entry.Name()); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func isBackupMarkdownFile(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	return looksLikeBackupText(data), nil
 }
 
 func updateBackupIndex(index *backupIndex, semester string, run backupRunContext, status string, completedAt time.Time, semesterFolder backupDriveFile, manifests []backupCourseManifest) {

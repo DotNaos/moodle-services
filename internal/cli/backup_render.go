@@ -4,12 +4,15 @@ import (
 	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DotNaos/moodle-services/internal/moodle"
 	"gopkg.in/yaml.v3"
@@ -59,6 +62,8 @@ type backupTextExtraction struct {
 	Path       string `yaml:"path,omitempty"`
 	Error      string `yaml:"error,omitempty"`
 }
+
+var errBackupUnsupportedTextResource = errors.New("unsupported non-text resource")
 
 type backupRunYAML struct {
 	Semester         string `yaml:"semester"`
@@ -184,13 +189,20 @@ func sha256File(path string) (string, error) {
 func extractBackupResourceTexts(client *moodle.Client, course backupCourse, resources []moodle.Resource) []backupTextExtraction {
 	results := make([]backupTextExtraction, 0)
 	textDir := filepath.Join(course.Dir, "materials-text")
+	if err := resetBackupTextDir(textDir); err != nil {
+		return []backupTextExtraction{{Status: "failed", Error: err.Error()}}
+	}
 	for _, resource := range resources {
 		if resource.Type != "resource" || strings.TrimSpace(resource.ID) == "" {
 			continue
 		}
-		text, err := renderDownloadedResource(client, resource.URL, resource.FileType, false)
+		text, err := renderBackupResourceText(client, resource)
 		if err != nil {
-			results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "failed", Error: err.Error()})
+			status := "failed"
+			if errors.Is(err, errBackupUnsupportedTextResource) {
+				status = "skipped"
+			}
+			results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: status, Error: err.Error()})
 			continue
 		}
 		text = strings.TrimSpace(text)
@@ -216,6 +228,87 @@ func extractBackupResourceTexts(client *moodle.Client, course backupCourse, reso
 		results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "ok", Path: filepath.ToSlash(rel)})
 	}
 	return results
+}
+
+func resetBackupTextDir(textDir string) error {
+	if strings.TrimSpace(textDir) == "" || textDir == string(filepath.Separator) {
+		return fmt.Errorf("refusing to reset invalid materials text directory")
+	}
+	if err := os.RemoveAll(textDir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func renderBackupResourceText(client *moodle.Client, resource moodle.Resource) (string, error) {
+	result, err := client.DownloadFileToBuffer(resource.URL)
+	if err != nil {
+		return "", err
+	}
+	fileType := strings.ToLower(strings.TrimSpace(resource.FileType))
+	contentType := strings.ToLower(strings.TrimSpace(strings.Split(result.ContentType, ";")[0]))
+	if fileType == "pdf" || strings.Contains(contentType, "pdf") {
+		text, err := moodle.ExtractPDFText(result.Data)
+		if err != nil {
+			return "", err
+		}
+		return cleanExtractedTextWithTimeout(text, 2*time.Second), nil
+	}
+	if !isBackupPlainTextResource(fileType, contentType, result.Data) {
+		return "", fmt.Errorf("%w: %s (%s)", errBackupUnsupportedTextResource, resource.Name, result.ContentType)
+	}
+	return string(result.Data), nil
+}
+
+func isBackupPlainTextResource(fileType string, contentType string, data []byte) bool {
+	switch strings.TrimPrefix(strings.ToLower(fileType), ".") {
+	case "txt", "md", "markdown", "csv", "tsv", "log", "xml", "html", "htm", "json", "yaml", "yml":
+		return looksLikeBackupText(data)
+	}
+	switch {
+	case strings.HasPrefix(contentType, "text/"):
+		return looksLikeBackupText(data)
+	case contentType == "application/json",
+		contentType == "application/xml",
+		contentType == "application/yaml",
+		contentType == "application/x-yaml",
+		contentType == "application/xhtml+xml":
+		return looksLikeBackupText(data)
+	default:
+		return false
+	}
+}
+
+func looksLikeBackupText(data []byte) bool {
+	if len(data) == 0 {
+		return true
+	}
+	if !utf8.Valid(data) {
+		return false
+	}
+	sampleData := data
+	if len(data) > 4096 {
+		sampleData = data[:4096]
+		for len(sampleData) > 0 && !utf8.Valid(sampleData) {
+			sampleData = sampleData[:len(sampleData)-1]
+		}
+	}
+	sample := string(sampleData)
+	var total int
+	var suspicious int
+	for _, r := range sample {
+		total++
+		if r == 0 {
+			return false
+		}
+		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
+			suspicious++
+		}
+	}
+	if total == 0 {
+		return true
+	}
+	return suspicious*100/total < 5
 }
 
 func renderBackupReport(run backupRunContext, status string, manifests []backupCourseManifest, failures []string) string {
