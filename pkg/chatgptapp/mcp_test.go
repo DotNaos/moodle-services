@@ -158,6 +158,26 @@ func TestMCPRenderPDFViewerReturnsEmbeddedViewerMetadata(t *testing.T) {
 	}
 }
 
+func TestMCPReadMaterialTextForPDFReturnsEmbeddedViewer(t *testing.T) {
+	handler := testHandler()
+	handler.APIKey = "secret"
+	resp := callTool(t, handler, "read_material_text", map[string]any{"courseId": "42", "resourceId": "100"})
+
+	result := resp["result"].(map[string]any)
+	content := result["structuredContent"].(map[string]any)
+	viewer := content["viewer"].(map[string]any)
+	if viewer["title"] != "Slides" || viewer["fileType"] != "pdf" {
+		t.Fatalf("expected PDF viewer descriptor, got %#v", viewer)
+	}
+	if _, ok := content["document"]; ok {
+		t.Fatalf("PDF material should render through the viewer instead of document text: %#v", content)
+	}
+	meta := result["_meta"].(map[string]any)
+	if !strings.Contains(meta["pdfUrl"].(string), "/api/pdf?") || !strings.Contains(meta["pdfUrl"].(string), "key=secret") {
+		t.Fatalf("expected widget-only pdf url, got %#v", meta)
+	}
+}
+
 func testHandler() Handler {
 	client := stubClient{
 		courses: []moodle.Course{{ID: 42, Fullname: "Machine Learning", Shortname: "ML"}},

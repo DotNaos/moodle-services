@@ -159,6 +159,9 @@ func (h Handler) callTool(name string, args json.RawMessage) (any, error) {
 			ResourceID string `json:"resourceId"`
 		}
 		_ = json.Unmarshal(args, &input)
+		if data, err := h.Service.PDFViewerData(input.CourseID, input.ResourceID); err == nil {
+			return h.pdfWidgetResult(data, input.CourseID, input.ResourceID, "Showing the embedded PDF viewer."), nil
+		}
 		doc, err := h.Service.MaterialText(input.CourseID, input.ResourceID)
 		return widgetResult(map[string]any{"document": doc}, "Extracted material text."), err
 	case "render_pdf_viewer":
