@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,8 +27,12 @@ func AuthQrExchange(w http.ResponseWriter, r *http.Request) {
 	if !svc.AllowMethods(w, r, http.MethodPost) {
 		return
 	}
-	if r.URL.Query().Get("clerk") == "1" {
+	switch r.URL.Query().Get("clerk") {
+	case "1":
 		authClerkQRExchange(w, r)
+		return
+	case "session":
+		authClerkSession(w, r)
 		return
 	}
 	var input qrExchangeInput
@@ -60,6 +65,51 @@ func authClerkQRExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	exchangeAndPersistQR(w, r, input, clerkUserID)
+}
+
+func authClerkSession(w http.ResponseWriter, r *http.Request) {
+	clerkUserID, ok := authorizeInternalRequest(w, r, true)
+	if !ok {
+		return
+	}
+	cfg := svc.LoadServerEnv()
+	st, err := svc.OpenStoreFromEnv(cfg)
+	if err != nil {
+		svc.WriteError(w, err)
+		return
+	}
+	defer st.Close()
+	user, err := st.UserForClerkID(r.Context(), clerkUserID)
+	if errors.Is(err, svc.ErrNotFound) {
+		writeMoodleNotConnected(w)
+		return
+	}
+	if err != nil {
+		svc.WriteError(w, err)
+		return
+	}
+	if _, err := st.MoodleCredentialsForUserID(r.Context(), user.ID); err != nil {
+		writeMoodleNotConnected(w)
+		return
+	}
+	apiKey, err := svc.GenerateAPIKey()
+	if err != nil {
+		svc.WriteError(w, err)
+		return
+	}
+	record, err := st.CreateAPIKey(r.Context(), user.ID, "Web restored session key", apiKey, cfg.HashSecret, []string{"moodle:read", "pdf:read", "calendar:read"})
+	if err != nil {
+		svc.WriteError(w, err)
+		return
+	}
+	svc.WriteJSON(w, http.StatusOK, map[string]any{"user": user, "apiKey": apiKey, "apiKeyRecord": record})
+}
+
+func writeMoodleNotConnected(w http.ResponseWriter) {
+	svc.WriteJSON(w, http.StatusConflict, map[string]string{
+		"code":  "moodle_not_connected",
+		"error": "Connect Moodle before creating a web session.",
+	})
 }
 
 func exchangeAndPersistQR(w http.ResponseWriter, r *http.Request, input qrExchangeInput, clerkUserID string) {
@@ -172,7 +222,7 @@ func mobileBridgeStart(w http.ResponseWriter, r *http.Request) {
 	if !svc.AllowMethods(w, r, http.MethodPost) {
 		return
 	}
-	clerkUserID, ok := authorizeInternalBridgeRequest(w, r, true)
+	clerkUserID, ok := authorizeInternalRequest(w, r, true)
 	if !ok {
 		return
 	}
@@ -233,7 +283,7 @@ func mobileBridgeStatus(w http.ResponseWriter, r *http.Request) {
 	if !svc.AllowMethods(w, r, http.MethodGet) {
 		return
 	}
-	clerkUserID, ok := authorizeInternalBridgeRequest(w, r, true)
+	clerkUserID, ok := authorizeInternalRequest(w, r, true)
 	if !ok {
 		return
 	}
@@ -287,7 +337,7 @@ func mobileBridgeComplete(w http.ResponseWriter, r *http.Request) {
 	if !svc.AllowMethods(w, r, http.MethodPost) {
 		return
 	}
-	if _, ok := authorizeInternalBridgeRequest(w, r, false); !ok {
+	if _, ok := authorizeInternalRequest(w, r, false); !ok {
 		return
 	}
 	var input mobileBridgeCompleteInput
@@ -393,7 +443,7 @@ func mobileBridgeComplete(w http.ResponseWriter, r *http.Request) {
 	svc.WriteJSON(w, http.StatusOK, map[string]any{"status": "connected", "user": user})
 }
 
-func authorizeInternalBridgeRequest(w http.ResponseWriter, r *http.Request, requireClerkUser bool) (string, bool) {
+func authorizeInternalRequest(w http.ResponseWriter, r *http.Request, requireClerkUser bool) (string, bool) {
 	expectedSecret := strings.TrimSpace(os.Getenv(internalWebSecretEnv))
 	if expectedSecret == "" {
 		svc.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": internalWebSecretEnv + " is not configured"})
