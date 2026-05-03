@@ -1,6 +1,6 @@
 package chatgptapp
 
-const widgetURI = "ui://widget/moodle-browser-v4.html"
+const widgetURI = "ui://widget/moodle-browser-v5.html"
 const resourceMimeType = "text/html;profile=mcp-app"
 const widgetDomain = "https://moodle-services.vercel.app"
 
@@ -35,24 +35,24 @@ const widgetHTML = `<!doctype html>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
-      --background: 220 20% 97%;
-      --foreground: 222 47% 11%;
+      --background: 0 0% 100%;
+      --foreground: 222.2 84% 4.9%;
       --card: 0 0% 100%;
-      --card-foreground: 222 47% 11%;
-      --primary: 222 47% 11%;
+      --card-foreground: 222.2 84% 4.9%;
+      --primary: 222.2 47.4% 11.2%;
       --primary-foreground: 210 40% 98%;
-      --secondary: 210 18% 92%;
-      --secondary-foreground: 222 47% 11%;
-      --muted: 210 18% 92%;
-      --muted-foreground: 215 12% 44%;
-      --accent: 212 92% 95%;
-      --accent-foreground: 222 47% 11%;
+      --secondary: 210 40% 96.1%;
+      --secondary-foreground: 222.2 47.4% 11.2%;
+      --muted: 210 40% 96.1%;
+      --muted-foreground: 215.4 16.3% 46.9%;
+      --accent: 210 40% 96.1%;
+      --accent-foreground: 222.2 47.4% 11.2%;
       --destructive: 0 84% 60%;
       --destructive-foreground: 210 40% 98%;
-      --border: 214 20% 88%;
-      --input: 214 20% 88%;
-      --ring: 222 47% 11%;
-      --radius: 0.75rem;
+      --border: 214.3 31.8% 91.4%;
+      --input: 214.3 31.8% 91.4%;
+      --ring: 222.2 84% 4.9%;
+      --radius: 0.5rem;
       color: hsl(var(--foreground));
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: hsl(var(--background));
@@ -64,12 +64,13 @@ const widgetHTML = `<!doctype html>
     .pdf-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .pdf-scrollbar::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 999px; border: 2px solid hsl(var(--background)); }
     .selection-box { position: absolute; border: 2px solid hsl(var(--primary)); background: color-mix(in oklab, hsl(var(--primary)) 12%, transparent); pointer-events: none; }
+    .pdf-page-shadow { box-shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 18px 48px rgba(15, 23, 42, .10); }
   </style>
 </head>
 <body>
   <div id="root"></div>
   <script type="module">
-    import React, { useCallback, useEffect, useMemo, useRef, useState } from "https://cdn.jsdelivr.net/npm/react@18.3.1/+esm";
+    import React, { useCallback, useEffect, useRef, useState } from "https://cdn.jsdelivr.net/npm/react@18.3.1/+esm";
     import { createRoot } from "https://cdn.jsdelivr.net/npm/react-dom@18.3.1/client/+esm";
 
     const e = React.createElement;
@@ -92,27 +93,43 @@ const widgetHTML = `<!doctype html>
       };
       return e("button", {
         ...props,
-        className: cn("inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", variants[variant], sizes[size], className)
+        className: cn("inline-flex shrink-0 items-center justify-center gap-2 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50", variants[variant], sizes[size], className)
       }, children);
     }
 
     function Badge({ children, className = "" }) {
-      return e("span", { className: cn("inline-flex items-center rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground", className) }, children);
+      return e("span", { className: cn("inline-flex items-center rounded-md border border-transparent bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground", className) }, children);
     }
 
-    function Slider({ value, min, max, step, onChange, label }) {
-      return e("label", { className: "flex min-w-40 items-center gap-2 text-xs text-muted-foreground" },
-        e("span", { className: "w-10 tabular-nums" }, label),
-        e("input", {
-          className: "h-2 w-36 cursor-pointer accent-foreground",
-          type: "range",
-          min,
-          max,
-          step,
-          value,
-          "aria-label": "Zoom",
-          onChange: (event) => onChange(Number(event.target.value))
-        })
+    function Icon({ name }) {
+      const icons = {
+        minus: e("path", { d: "M5 12h14" }),
+        plus: e("path", { d: "M12 5v14M5 12h14" }),
+        scan: e(React.Fragment, null, e("path", { d: "M8 3H5a2 2 0 0 0-2 2v3" }), e("path", { d: "M21 8V5a2 2 0 0 0-2-2h-3" }), e("path", { d: "M3 16v3a2 2 0 0 0 2 2h3" }), e("path", { d: "M16 21h3a2 2 0 0 0 2-2v-3" }), e("path", { d: "M7 12h10" })),
+        camera: e(React.Fragment, null, e("path", { d: "M14.5 4h-5L8 6H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3l-1.5-2Z" }), e("circle", { cx: "12", cy: "13", r: "3" })),
+        expand: e(React.Fragment, null, e("path", { d: "M15 3h6v6" }), e("path", { d: "m21 3-7 7" }), e("path", { d: "M9 21H3v-6" }), e("path", { d: "m3 21 7-7" })),
+        file: e(React.Fragment, null, e("path", { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" }), e("path", { d: "M14 2v4a2 2 0 0 0 2 2h4" }))
+      };
+      return e("svg", { "aria-hidden": "true", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: "size-4" }, icons[name]);
+    }
+
+    function Separator() {
+      return e("div", { className: "h-5 w-px bg-border" });
+    }
+
+    function Kbd({ children }) {
+      return e("kbd", { className: "rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground shadow-sm" }, children);
+    }
+
+    function ZoomControl({ zoom, onZoomIn, onZoomOut, onReset }) {
+      return e("div", { className: "flex items-center rounded-md border border-border bg-background p-1 shadow-sm" },
+        e(Button, { variant: "ghost", size: "icon", "aria-label": "Zoom out", title: "Zoom out", onClick: onZoomOut }, e(Icon, { name: "minus" })),
+        e("button", {
+          className: "h-8 min-w-14 rounded-sm px-2 text-center text-xs font-medium tabular-nums text-foreground hover:bg-accent",
+          title: "Reset zoom",
+          onClick: onReset
+        }, Math.round(zoom * 100) + "%"),
+        e(Button, { variant: "ghost", size: "icon", "aria-label": "Zoom in", title: "Zoom in", onClick: onZoomIn }, e(Icon, { name: "plus" }))
       );
     }
 
@@ -152,7 +169,7 @@ const widgetHTML = `<!doctype html>
         };
       }, [renderToolPayload]);
 
-      return e("main", { className: "grid h-screen min-h-[420px] grid-rows-[auto_1fr] overflow-hidden bg-background text-foreground" },
+      return e("main", { className: "grid h-screen min-h-[420px] grid-rows-[auto_1fr] overflow-hidden bg-muted/40 text-foreground" },
         e(Header, { data: toolPayload }),
         e("section", { className: "min-h-0 overflow-hidden" }, e(Content, { data: toolPayload, metadata }))
       );
@@ -160,13 +177,16 @@ const widgetHTML = `<!doctype html>
 
     function Header({ data }) {
       const title = data?.viewer?.title || data?.document?.title || (Array.isArray(data?.courses) ? "Moodle courses" : "Moodle");
-      const subtitle = data?.viewer?.fileType === "pdf" ? "PDF viewer" : "Moodle";
-      return e("header", { className: "flex items-center justify-between gap-3 border-b border-border bg-card px-4 py-3" },
-        e("div", { className: "min-w-0" },
-          e("h1", { className: "truncate text-base font-semibold tracking-normal" }, title),
-          e("p", { className: "truncate text-xs text-muted-foreground" }, subtitle)
+      const subtitle = data?.viewer?.fileType === "pdf" ? "Scrollable PDF viewer" : "Moodle";
+      return e("header", { className: "flex h-14 items-center justify-between gap-3 border-b border-border bg-background/95 px-4 backdrop-blur" },
+        e("div", { className: "flex min-w-0 items-center gap-3" },
+          e("div", { className: "flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm" }, e(Icon, { name: "file" })),
+          e("div", { className: "min-w-0" },
+            e("h1", { className: "truncate text-sm font-semibold tracking-normal" }, title),
+            e("p", { className: "truncate text-xs text-muted-foreground" }, subtitle)
+          )
         ),
-        e(Badge, null, "Moodle")
+        e(Badge, { className: "hidden sm:inline-flex" }, "Moodle")
       );
     }
 
@@ -234,6 +254,8 @@ const widgetHTML = `<!doctype html>
       const [selectionDraft, setSelectionDraft] = useState(null);
       const [selection, setSelection] = useState(null);
       const saveTimer = useRef(0);
+      const zoomAnchorRef = useRef(null);
+      const appliedTargetRef = useRef("");
 
       useEffect(() => {
         let cancelled = false;
@@ -277,8 +299,22 @@ const widgetHTML = `<!doctype html>
       }, [zoom, viewportWidth]);
 
       useEffect(() => {
+        const anchor = zoomAnchorRef.current;
+        const container = containerRef.current;
+        if (!anchor || !container) return;
+        zoomAnchorRef.current = null;
+        window.requestAnimationFrame(() => {
+          container.scrollLeft = anchor.contentX * anchor.ratio - anchor.viewX;
+          container.scrollTop = anchor.contentY * anchor.ratio - anchor.viewY;
+        });
+      }, [zoom]);
+
+      useEffect(() => {
         if (!pdf || pdf.error || !pageCount || renderedPages.size < pageCount) return;
         const target = viewer.target || {};
+        const targetKey = JSON.stringify([viewer.courseId || "", viewer.resourceId || "", target.page || 1, target.query || ""]);
+        if (appliedTargetRef.current === targetKey) return;
+        appliedTargetRef.current = targetKey;
         const go = async () => {
           if (target.query) {
             const page = await findTextPage(pdf, String(target.query));
@@ -315,6 +351,37 @@ const widgetHTML = `<!doctype html>
         node.addEventListener("scroll", onScroll, { passive: true });
         return () => node.removeEventListener("scroll", onScroll);
       }, [currentPage, pageCount, viewer.title, selection]);
+
+      const setZoomFromInteraction = useCallback((nextZoom, event) => {
+        const container = containerRef.current;
+        setZoom((previousZoom) => {
+          const resolvedZoom = clamp(typeof nextZoom === "function" ? nextZoom(previousZoom) : nextZoom, 0.5, 3);
+          if (container && event && resolvedZoom !== previousZoom) {
+            const rect = container.getBoundingClientRect();
+            zoomAnchorRef.current = {
+              contentX: event.clientX - rect.left + container.scrollLeft,
+              contentY: event.clientY - rect.top + container.scrollTop,
+              viewX: event.clientX - rect.left,
+              viewY: event.clientY - rect.top,
+              ratio: resolvedZoom / previousZoom
+            };
+          }
+          return resolvedZoom;
+        });
+      }, []);
+
+      useEffect(() => {
+        const node = containerRef.current;
+        if (!node) return;
+        const onWheel = (event) => {
+          if (!event.ctrlKey && !event.metaKey) return;
+          event.preventDefault();
+          const factor = Math.exp(-event.deltaY * 0.003);
+          setZoomFromInteraction((value) => value * factor, event);
+        };
+        node.addEventListener("wheel", onWheel, { passive: false });
+        return () => node.removeEventListener("wheel", onWheel);
+      }, [setZoomFromInteraction]);
 
       const onPageRendered = useCallback((pageNo, canvas, wrapper) => {
         canvasesRef.current.set(pageNo, canvas);
@@ -415,20 +482,31 @@ const widgetHTML = `<!doctype html>
 
       const pages = pageCount ? Array.from({ length: pageCount }, (_, index) => index + 1) : [];
       const rendered = pageCount > 0 && renderedPages.size >= pageCount;
-      const zoomLabel = Math.round(zoom * 100) + "%";
-
       return e("div", { className: "grid h-full grid-rows-[auto_1fr] overflow-hidden" },
-        e("div", { className: "flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2" },
-          e(Badge, null, rendered ? currentPage + " / " + pageCount : "Loading"),
-          e(Button, { variant: "secondary", size: "icon", "aria-label": "Zoom out", onClick: () => setZoom((value) => clamp(value - 0.1, 0.5, 2.75)) }, "−"),
-          e(Slider, { value: zoom, min: 0.5, max: 2.75, step: 0.05, label: zoomLabel, onChange: setZoom }),
-          e(Button, { variant: "secondary", size: "icon", "aria-label": "Zoom in", onClick: () => setZoom((value) => clamp(value + 0.1, 0.5, 2.75)) }, "+"),
+        e("div", { className: "flex flex-wrap items-center gap-2 border-b border-border bg-background/95 px-3 py-2 backdrop-blur" },
+          e("div", { className: "flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-sm" },
+            e("span", { className: "font-medium tabular-nums" }, rendered ? currentPage + " / " + pageCount : "Loading"),
+            e("span", { className: "hidden text-muted-foreground sm:inline" }, "Page")
+          ),
+          e(ZoomControl, {
+            zoom,
+            onZoomOut: () => setZoomFromInteraction((value) => value - 0.1),
+            onZoomIn: () => setZoomFromInteraction((value) => value + 0.1),
+            onReset: () => setZoomFromInteraction(1)
+          }),
+          e("div", { className: "hidden items-center gap-1 text-xs text-muted-foreground md:flex" },
+            e("span", null, "Pinch"),
+            e("span", null, "or"),
+            e(Kbd, null, "ctrl"),
+            e("span", null, "+ scroll to zoom")
+          ),
           e("div", { className: "flex-1" }),
-          e(Button, { variant: selectMode ? "default" : "secondary", onClick: () => setSelectMode((value) => !value) }, selectMode ? "Drag on PDF" : "Ask"),
-          e(Button, { variant: "secondary", onClick: () => saveState() }, "Screenshot"),
-          e(Button, { variant: "secondary", onClick: () => window.openai?.requestDisplayMode?.({ mode: "fullscreen" }) }, "Fullscreen")
+          e(Separator),
+          e(Button, { variant: selectMode ? "default" : "outline", title: "Select an area to ask ChatGPT", onClick: () => setSelectMode((value) => !value) }, e(Icon, { name: "scan" }), selectMode ? "Select area" : "Ask"),
+          e(Button, { variant: "outline", title: "Save current page screenshot for ChatGPT", onClick: () => saveState() }, e(Icon, { name: "camera" }), "Screenshot"),
+          e(Button, { variant: "outline", title: "Open fullscreen", onClick: () => window.openai?.requestDisplayMode?.({ mode: "fullscreen" }) }, e(Icon, { name: "expand" }), "Fullscreen")
         ),
-        e("div", { ref: containerRef, className: cn("min-h-0 overflow-auto p-4 pdf-scrollbar", selectMode && "cursor-crosshair") },
+        e("div", { ref: containerRef, className: cn("min-h-0 overflow-auto bg-muted/40 p-4 pdf-scrollbar sm:p-6", selectMode && "cursor-crosshair") },
           !pdf ? e("div", { className: "flex h-full items-center justify-center text-sm text-muted-foreground" }, "Loading embedded PDF...") :
           e("div", { className: "mx-auto flex max-w-[1200px] flex-col items-center gap-5" },
             pages.map((pageNo) => e(PDFPage, {
@@ -488,15 +566,18 @@ const widgetHTML = `<!doctype html>
 
       return e("article", {
         ref: wrapperRef,
-        className: "relative w-fit max-w-full rounded-lg bg-card p-2 shadow-sm ring-1 ring-border",
+        className: "pdf-page-shadow relative w-fit max-w-full rounded-lg border border-border bg-card p-2",
         "data-page": pageNo,
         onPointerDown: (event) => onPointerDown(pageNo, event),
         onPointerMove: (event) => onPointerMove(pageNo, event),
         onPointerUp: (event) => onPointerUp(pageNo, event)
       },
-        e("canvas", { ref: canvasRef, className: "block max-w-full rounded-md bg-white", style: size ? { width: size.width, height: size.height } : undefined }),
+        e("canvas", { ref: canvasRef, className: "block max-w-full rounded-sm bg-white", style: size ? { width: size.width, height: size.height } : undefined }),
         selectionRect ? e("div", { className: "selection-box", style: { left: selectionRect.x, top: selectionRect.y, width: selectionRect.width, height: selectionRect.height } }) : null,
-        e("div", { className: "px-1 pt-2 text-xs text-muted-foreground" }, "Page " + pageNo)
+        e("div", { className: "flex items-center justify-between px-1 pt-2 text-xs text-muted-foreground" },
+          e("span", null, "Page " + pageNo),
+          e("span", { className: "tabular-nums" }, Math.round(zoom * 100) + "%")
+        )
       );
     }
 
