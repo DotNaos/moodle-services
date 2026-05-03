@@ -23,6 +23,10 @@ type Client interface {
 	FetchCourseResources(courseID string) ([]moodle.Resource, string, error)
 }
 
+type categoryClient interface {
+	FetchCategories() ([]moodle.Category, error)
+}
+
 // ServerOptions configure the HTTP router.
 type ServerOptions struct {
 	ClientProvider func() (Client, error)
@@ -54,6 +58,7 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get(scalarPath, scalarHandler())
 	router.Get("/healthz", healthHandler(opts))
 	router.Get("/api/courses", coursesHandler(opts))
+	router.Get("/api/categories", categoriesHandler(opts))
 	router.Get("/api/courses/{courseID}/resources", courseResourcesHandler(opts))
 	registerCommandRoutes(router, opts)
 
@@ -99,6 +104,27 @@ func coursesHandler(opts ServerOptions) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, courses)
+	}
+}
+
+func categoriesHandler(opts ServerOptions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		client, err := opts.ClientProvider()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		categoriesClient, ok := client.(categoryClient)
+		if !ok {
+			writeError(w, http.StatusNotImplemented, fmt.Errorf("moodle client does not support categories"))
+			return
+		}
+		categories, err := categoriesClient.FetchCategories()
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, categories)
 	}
 }
 

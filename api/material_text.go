@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 	svc "github.com/DotNaos/moodle-services/pkg/moodleservices"
 )
 
@@ -28,5 +29,5 @@ func MaterialText(w http.ResponseWriter, r *http.Request) {
 		svc.WriteError(w, err)
 		return
 	}
-	svc.WriteJSON(w, http.StatusOK, map[string]any{"document": doc})
+	svc.WriteJSON(w, http.StatusOK, contract.MaterialTextResponse{Document: doc})
 }

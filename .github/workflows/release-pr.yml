@@ -79,12 +79,14 @@ jobs:
             [[ -z "${old_tag}" ]] && continue
             gh release delete "${old_tag}" --yes >/dev/null 2>&1 || true
             git push origin ":refs/tags/${old_tag}" >/dev/null 2>&1 || true
+            git tag -d "${old_tag}" >/dev/null 2>&1 || true
           done <<< "${previous_tags}"
 
           while IFS= read -r legacy_tag; do
             [[ -z "${legacy_tag}" ]] && continue
             gh release delete "${legacy_tag}" --yes >/dev/null 2>&1 || true
             git push origin ":refs/tags/${legacy_tag}" >/dev/null 2>&1 || true
+            git tag -d "${legacy_tag}" >/dev/null 2>&1 || true
           done < <(git tag --list "v*-unstable.pr${PR_NUMBER}*" | sort -V)
 
           git config user.name "github-actions[bot]"
@@ -126,6 +128,7 @@ jobs:
             [[ -z "${unstable_tag}" ]] && continue
             gh release delete "${unstable_tag}" --yes >/dev/null 2>&1 || true
             git push origin ":refs/tags/${unstable_tag}" >/dev/null 2>&1 || true
+            git tag -d "${unstable_tag}" >/dev/null 2>&1 || true
           done < <(
             {
               git tag --list "v*-canary.${branch_slug}.*"

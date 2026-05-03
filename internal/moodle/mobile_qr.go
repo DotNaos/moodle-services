@@ -46,10 +46,22 @@ type MobileSiteInfo struct {
 }
 
 type MobileCourse struct {
-	ID        int    `json:"id"`
-	FullName  string `json:"fullname"`
-	ShortName string `json:"shortname"`
-	Visible   int    `json:"visible"`
+	ID            int                    `json:"id"`
+	FullName      string                 `json:"fullname"`
+	ShortName     string                 `json:"shortname"`
+	Visible       int                    `json:"visible"`
+	CategoryID    int                    `json:"category"`
+	CourseImage   string                 `json:"courseimage"`
+	OverviewFiles []MobileCourseOverview `json:"overviewfiles"`
+}
+
+type MobileCourseOverview struct {
+	FileName     string `json:"filename"`
+	FilePath     string `json:"filepath"`
+	FileSize     int    `json:"filesize"`
+	FileURL      string `json:"fileurl"`
+	TimeModified int64  `json:"timemodified"`
+	MimeType     string `json:"mimetype"`
 }
 
 func ParseMobileQRLink(raw string) (MobileQRLink, error) {

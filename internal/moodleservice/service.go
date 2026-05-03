@@ -22,6 +22,10 @@ type CoursePageClient interface {
 	FetchCoursePageReader(courseID string) (string, error)
 }
 
+type CategoryClient interface {
+	FetchCategories() ([]moodle.Category, error)
+}
+
 type Service struct {
 	Client      DataClient
 	CalendarURL string
@@ -62,6 +66,17 @@ func (s Service) ListCourses() ([]moodle.Course, error) {
 		return nil, fmt.Errorf("moodle client is not configured")
 	}
 	return s.Client.FetchCourses()
+}
+
+func (s Service) ListCategories() ([]moodle.Category, error) {
+	if s.Client == nil {
+		return nil, fmt.Errorf("moodle client is not configured")
+	}
+	client, ok := s.Client.(CategoryClient)
+	if !ok {
+		return nil, fmt.Errorf("moodle client does not support categories")
+	}
+	return client.FetchCategories()
 }
 
 func (s Service) ListMaterials(courseID string) ([]moodle.Resource, error) {

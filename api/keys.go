@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 	svc "github.com/DotNaos/moodle-services/pkg/moodleservices"
 )
 
@@ -29,13 +30,9 @@ func Keys(w http.ResponseWriter, r *http.Request) {
 			svc.WriteError(w, err)
 			return
 		}
-		svc.WriteJSON(w, http.StatusOK, map[string]any{"keys": records})
+		svc.WriteJSON(w, http.StatusOK, contract.ListAPIKeysResponse{Keys: records})
 	case http.MethodPost:
-		var input struct {
-			Name           string   `json:"name"`
-			Scopes         []string `json:"scopes"`
-			RevokeExisting bool     `json:"revokeExisting"`
-		}
+		var input contract.CreateAPIKeyRequest
 		_ = json.NewDecoder(r.Body).Decode(&input)
 		if strings.TrimSpace(input.Name) == "" {
 			input.Name = "API key"
@@ -59,7 +56,7 @@ func Keys(w http.ResponseWriter, r *http.Request) {
 			svc.WriteError(w, err)
 			return
 		}
-		svc.WriteJSON(w, http.StatusOK, map[string]any{"apiKey": apiKey, "apiKeyRecord": record, "revokedExisting": input.RevokeExisting})
+		svc.WriteJSON(w, http.StatusOK, contract.CreateAPIKeyResponse{APIKey: apiKey, APIKeyRecord: record, RevokedExisting: input.RevokeExisting})
 	case http.MethodDelete:
 		keyID := strings.TrimSpace(r.URL.Query().Get("id"))
 		if keyID == "" {
@@ -75,6 +72,6 @@ func Keys(w http.ResponseWriter, r *http.Request) {
 			svc.WriteError(w, err)
 			return
 		}
-		svc.WriteJSON(w, http.StatusOK, map[string]bool{"revoked": true})
+		svc.WriteJSON(w, http.StatusOK, contract.RevokeAPIKeyResponse{Revoked: true})
 	}
 }

@@ -9,15 +9,11 @@ import (
 	"strings"
 	"time"
 
+	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 	svc "github.com/DotNaos/moodle-services/pkg/moodleservices"
 )
 
 const internalWebSecretEnv = "MOODLE_WEB_INTERNAL_SECRET"
-
-type qrExchangeInput struct {
-	QR   string `json:"qr"`
-	Name string `json:"name"`
-}
 
 func AuthQrExchange(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("bridge") != "" {
@@ -35,7 +31,7 @@ func AuthQrExchange(w http.ResponseWriter, r *http.Request) {
 		authClerkSession(w, r)
 		return
 	}
-	var input qrExchangeInput
+	var input contract.QRExchangeRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
@@ -59,7 +55,7 @@ func authClerkQRExchange(w http.ResponseWriter, r *http.Request) {
 		svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Missing Clerk user id"})
 		return
 	}
-	var input qrExchangeInput
+	var input contract.QRExchangeRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
@@ -102,7 +98,7 @@ func authClerkSession(w http.ResponseWriter, r *http.Request) {
 		svc.WriteError(w, err)
 		return
 	}
-	svc.WriteJSON(w, http.StatusOK, map[string]any{"user": user, "apiKey": apiKey, "apiKeyRecord": record})
+	svc.WriteJSON(w, http.StatusOK, contract.QRExchangeResponse{User: user, APIKey: apiKey, APIKeyRecord: record})
 }
 
 func writeMoodleNotConnected(w http.ResponseWriter) {
@@ -112,7 +108,7 @@ func writeMoodleNotConnected(w http.ResponseWriter) {
 	})
 }
 
-func exchangeAndPersistQR(w http.ResponseWriter, r *http.Request, input qrExchangeInput, clerkUserID string) {
+func exchangeAndPersistQR(w http.ResponseWriter, r *http.Request, input contract.QRExchangeRequest, clerkUserID string) {
 	link, err := svc.ParseMobileQRLink(input.QR)
 	if err != nil {
 		svc.WriteError(w, err)
@@ -183,7 +179,7 @@ func exchangeAndPersistQR(w http.ResponseWriter, r *http.Request, input qrExchan
 		svc.WriteError(w, err)
 		return
 	}
-	svc.WriteJSON(w, http.StatusOK, map[string]any{"user": user, "apiKey": apiKey, "apiKeyRecord": record})
+	svc.WriteJSON(w, http.StatusOK, contract.QRExchangeResponse{User: user, APIKey: apiKey, APIKeyRecord: record})
 }
 
 const mobileBridgeTTL = 10 * time.Minute

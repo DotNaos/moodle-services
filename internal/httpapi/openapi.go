@@ -1,6 +1,14 @@
 package httpapi
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/DotNaos/moodle-services/internal/moodle"
+	"github.com/DotNaos/moodle-services/internal/moodleservice"
+	"github.com/DotNaos/moodle-services/internal/store"
+	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
+	"github.com/invopop/jsonschema"
+)
 
 func OpenAPISpecJSON() []byte {
 	spec := map[string]any{
@@ -28,65 +36,44 @@ func OpenAPISpecJSON() []byte {
 
 func schemas() map[string]any {
 	return map[string]any{
-		"Error": map[string]any{
-			"type":       "object",
-			"required":   []string{"error"},
-			"properties": map[string]any{"error": map[string]any{"type": "string"}},
-		},
-		"QRExchangeRequest": map[string]any{
-			"type":       "object",
-			"required":   []string{"qr"},
-			"properties": map[string]any{"qr": map[string]any{"type": "string"}},
-		},
-		"QRExchangeResponse": map[string]any{
-			"type":     "object",
-			"required": []string{"user", "apiKey", "apiKeyRecord"},
-			"properties": map[string]any{
-				"user":         map[string]any{"$ref": "#/components/schemas/User"},
-				"apiKey":       map[string]any{"type": "string"},
-				"apiKeyRecord": map[string]any{"$ref": "#/components/schemas/APIKey"},
-			},
-		},
-		"CreateAPIKeyRequest": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"name":           map[string]any{"type": "string"},
-				"scopes":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				"revokeExisting": map[string]any{"type": "boolean"},
-			},
-		},
-		"CreateAPIKeyResponse": map[string]any{
-			"type":     "object",
-			"required": []string{"apiKey", "apiKeyRecord"},
-			"properties": map[string]any{
-				"apiKey":          map[string]any{"type": "string"},
-				"apiKeyRecord":    map[string]any{"$ref": "#/components/schemas/APIKey"},
-				"revokedExisting": map[string]any{"type": "boolean"},
-			},
-		},
-		"User": map[string]any{
-			"type":     "object",
-			"required": []string{"id", "moodleSiteUrl", "moodleUserId", "displayName"},
-			"properties": map[string]any{
-				"id":            map[string]any{"type": "string"},
-				"moodleSiteUrl": map[string]any{"type": "string"},
-				"moodleUserId":  map[string]any{"type": "integer"},
-				"displayName":   map[string]any{"type": "string"},
-			},
-		},
-		"APIKey": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"id":         map[string]any{"type": "string"},
-				"name":       map[string]any{"type": "string"},
-				"keyPrefix":  map[string]any{"type": "string"},
-				"scopes":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				"lastUsedAt": map[string]any{"type": "string", "format": "date-time", "nullable": true},
-				"revokedAt":  map[string]any{"type": "string", "format": "date-time", "nullable": true},
-				"createdAt":  map[string]any{"type": "string", "format": "date-time"},
-			},
-		},
+		"Error":                schemaFor[contract.ErrorResponse](),
+		"QRExchangeRequest":    schemaFor[contract.QRExchangeRequest](),
+		"QRExchangeResponse":   schemaFor[contract.QRExchangeResponse](),
+		"CreateAPIKeyRequest":  schemaFor[contract.CreateAPIKeyRequest](),
+		"CreateAPIKeyResponse": schemaFor[contract.CreateAPIKeyResponse](),
+		"ListAPIKeysResponse":  schemaFor[contract.ListAPIKeysResponse](),
+		"RevokeAPIKeyResponse": schemaFor[contract.RevokeAPIKeyResponse](),
+		"User":                 schemaFor[store.User](),
+		"APIKey":               schemaFor[store.APIKeyRecord](),
+		"Course":               schemaFor[moodle.Course](),
+		"CoursesResponse":      schemaFor[contract.CoursesResponse](),
+		"Category":             schemaFor[moodle.Category](),
+		"CategoriesResponse":   schemaFor[contract.CategoriesResponse](),
+		"Resource":             schemaFor[moodle.Resource](),
+		"MaterialsResponse":    schemaFor[contract.MaterialsResponse](),
+		"FetchDocument":        schemaFor[moodleservice.FetchDocument](),
+		"MaterialTextResponse": schemaFor[contract.MaterialTextResponse](),
+		"SearchResult":         schemaFor[moodleservice.SearchResult](),
+		"SearchResponse":       schemaFor[contract.SearchResponse](),
 	}
+}
+
+func schemaFor[T any]() map[string]any {
+	reflector := jsonschema.Reflector{
+		Anonymous:                  true,
+		DoNotReference:             true,
+		ExpandedStruct:             true,
+		AllowAdditionalProperties:  false,
+		RequiredFromJSONSchemaTags: false,
+	}
+	schema := reflector.Reflect(new(T))
+	data, _ := json.Marshal(schema)
+	var out map[string]any
+	_ = json.Unmarshal(data, &out)
+	delete(out, "$schema")
+	delete(out, "$id")
+	delete(out, "$defs")
+	return out
 }
 
 func paths() map[string]any {
@@ -99,23 +86,27 @@ func paths() map[string]any {
 			"get": operation("getMe", "Get current API user", security, "", "#/components/schemas/User"),
 		},
 		"/api/keys": map[string]any{
-			"get":  operation("listAPIKeys", "List API keys", security, "", "#/components/schemas/APIKey"),
-			"post": operation("createAPIKey", "Create API key", security, "#/components/schemas/CreateAPIKeyRequest", "#/components/schemas/CreateAPIKeyResponse"),
+			"get":    operation("listAPIKeys", "List API keys", security, "", "#/components/schemas/ListAPIKeysResponse"),
+			"post":   operation("createAPIKey", "Create API key", security, "#/components/schemas/CreateAPIKeyRequest", "#/components/schemas/CreateAPIKeyResponse"),
+			"delete": operationWithParams("revokeAPIKey", "Revoke API key", security, []any{queryParamRequired("id")}, "#/components/schemas/RevokeAPIKeyResponse"),
 		},
 		"/api/courses": map[string]any{
-			"get": operation("listCourses", "List Moodle courses", security, "", ""),
+			"get": operation("listCourses", "List Moodle courses", security, "", "#/components/schemas/CoursesResponse"),
+		},
+		"/api/categories": map[string]any{
+			"get": operation("listCategories", "List Moodle categories", security, "", "#/components/schemas/CategoriesResponse"),
 		},
 		"/api/courses/{courseId}/materials": map[string]any{
-			"get": operationWithParams("listCourseMaterials", "List course materials", security, []any{pathParam("courseId")}),
+			"get": operationWithParams("listCourseMaterials", "List course materials", security, []any{pathParam("courseId")}, "#/components/schemas/MaterialsResponse"),
 		},
 		"/api/courses/{courseId}/materials/{resourceId}/text": map[string]any{
-			"get": operationWithParams("readMaterialText", "Read material text", security, []any{pathParam("courseId"), pathParam("resourceId")}),
+			"get": operationWithParams("readMaterialText", "Read material text", security, []any{pathParam("courseId"), pathParam("resourceId")}, "#/components/schemas/MaterialTextResponse"),
 		},
 		"/api/courses/{courseId}/materials/{resourceId}/pdf": map[string]any{
 			"get": operationWithParams("readMaterialPDF", "Read material PDF", security, []any{pathParam("courseId"), pathParam("resourceId")}),
 		},
 		"/api/search": map[string]any{
-			"get": operationWithParams("searchMoodle", "Search Moodle", security, []any{queryParam("q")}),
+			"get": operationWithParams("searchMoodle", "Search Moodle", security, []any{queryParam("q")}, "#/components/schemas/SearchResponse"),
 		},
 		"/api/openapi.json": map[string]any{
 			"get": operation("getOpenAPISpec", "Get OpenAPI spec", nil, "", ""),
@@ -141,8 +132,12 @@ func operation(operationID string, summary string, security []any, requestSchema
 	return op
 }
 
-func operationWithParams(operationID string, summary string, security []any, params []any) map[string]any {
-	op := operation(operationID, summary, security, "", "")
+func operationWithParams(operationID string, summary string, security []any, params []any, responseSchema ...string) map[string]any {
+	schema := ""
+	if len(responseSchema) > 0 {
+		schema = responseSchema[0]
+	}
+	op := operation(operationID, summary, security, "", schema)
 	op["parameters"] = params
 	return op
 }
@@ -150,11 +145,7 @@ func operationWithParams(operationID string, summary string, security []any, par
 func responses(schema string) map[string]any {
 	okSchema := map[string]any{"type": "object"}
 	if schema != "" {
-		if schema == "#/components/schemas/APIKey" {
-			okSchema = map[string]any{"type": "array", "items": map[string]any{"$ref": schema}}
-		} else {
-			okSchema = map[string]any{"$ref": schema}
-		}
+		okSchema = map[string]any{"$ref": schema}
 	}
 	return map[string]any{
 		"200": map[string]any{"description": "OK", "content": map[string]any{"application/json": map[string]any{"schema": okSchema}}},
@@ -174,4 +165,10 @@ func pathParam(name string) map[string]any {
 
 func queryParam(name string) map[string]any {
 	return map[string]any{"name": name, "in": "query", "required": false, "schema": map[string]any{"type": "string"}}
+}
+
+func queryParamRequired(name string) map[string]any {
+	param := queryParam(name)
+	param["required"] = true
+	return param
 }

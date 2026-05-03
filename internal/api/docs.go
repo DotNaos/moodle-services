@@ -105,6 +105,28 @@ func openAPIDocument(r *http.Request, opts ServerOptions) map[string]any {
 				},
 			},
 		},
+		"/api/categories": map[string]any{
+			"get": map[string]any{
+				"summary":     "List course categories",
+				"description": "Returns normalized Moodle course categories visible through the mobile web service.",
+				"responses": map[string]any{
+					"200": map[string]any{
+						"description": "Categories list",
+						"content": map[string]any{
+							"application/json": map[string]any{
+								"schema": map[string]any{
+									"type":  "array",
+									"items": map[string]any{"$ref": "#/components/schemas/Category"},
+								},
+							},
+						},
+					},
+					"500": errorResponse("Server bootstrap error"),
+					"501": errorResponse("Client does not support categories"),
+					"502": errorResponse("Moodle fetch failed"),
+				},
+			},
+		},
 		"/api/courses/{courseID}/resources": map[string]any{
 			"get": map[string]any{
 				"summary":     "List course resources",
@@ -212,7 +234,11 @@ func openAPIDocument(r *http.Request, opts ServerOptions) map[string]any {
 						},
 						"category": map[string]any{
 							"type":    "string",
-							"example": "BSc Computer Science",
+							"example": "FS26",
+						},
+						"categoryId": map[string]any{
+							"type":    "integer",
+							"example": 1885,
 						},
 						"viewUrl": map[string]any{
 							"type":    "string",
@@ -223,6 +249,36 @@ func openAPIDocument(r *http.Request, opts ServerOptions) map[string]any {
 							"type":    "string",
 							"format":  "uri",
 							"example": "https://moodle.example.edu/pluginfile.php/123/course/overviewfiles/banner.jpg",
+						},
+					},
+				},
+				"Category": map[string]any{
+					"type":     "object",
+					"required": []string{"id", "name"},
+					"properties": map[string]any{
+						"id": map[string]any{
+							"type":    "integer",
+							"example": 1885,
+						},
+						"name": map[string]any{
+							"type":    "string",
+							"example": "FS26",
+						},
+						"idNumber": map[string]any{
+							"type":    "string",
+							"example": "",
+						},
+						"parentId": map[string]any{
+							"type":    "integer",
+							"example": 1157,
+						},
+						"path": map[string]any{
+							"type":    "string",
+							"example": "/7/1157/1885",
+						},
+						"depth": map[string]any{
+							"type":    "integer",
+							"example": 3,
 						},
 					},
 				},

@@ -29,6 +29,10 @@
       "destination": "/api/openapi"
     },
     {
+      "source": "/api/categories",
+      "destination": "/api/courses?route=categories"
+    },
+    {
       "source": "/api/auth/qr/exchange",
       "destination": "/api/auth_qr_exchange"
     },
