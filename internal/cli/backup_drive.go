@@ -40,11 +40,15 @@ type backupDriveUploader interface {
 }
 
 type dryRunBackupDriveUploader struct {
-	ids map[string]backupDriveFile
+	ids          map[string]backupDriveFile
+	rootFolderID string
 }
 
 func newDryRunBackupDriveUploader() *dryRunBackupDriveUploader {
-	return &dryRunBackupDriveUploader{ids: map[string]backupDriveFile{}}
+	uploader := &dryRunBackupDriveUploader{ids: map[string]backupDriveFile{}}
+	root := uploader.record(backupDriveRootName)
+	uploader.rootFolderID = root.ID
+	return uploader
 }
 
 func (u *dryRunBackupDriveUploader) record(key string) backupDriveFile {
@@ -59,11 +63,11 @@ func (u *dryRunBackupDriveUploader) record(key string) backupDriveFile {
 }
 
 func (u *dryRunBackupDriveUploader) EnsureFolderPath(ctx context.Context, parts []string) (backupDriveFile, error) {
-	return u.record(strings.Join(parts, "/")), nil
+	return u.record(u.drivePath(parts)), nil
 }
 
 func (u *dryRunBackupDriveUploader) CreateRunFolder(ctx context.Context, parts []string) (backupDriveFile, error) {
-	return u.record(strings.Join(parts, "/")), nil
+	return u.record(u.drivePath(parts)), nil
 }
 
 func (u *dryRunBackupDriveUploader) UploadFile(ctx context.Context, path string, folderID string, name string) (backupDriveFile, error) {
@@ -75,6 +79,13 @@ func (u *dryRunBackupDriveUploader) UploadFile(ctx context.Context, path string,
 
 func (u *dryRunBackupDriveUploader) UploadText(ctx context.Context, text string, folderID string, name string, overwrite bool) (backupDriveFile, error) {
 	return u.record(folderID + "/" + name), nil
+}
+
+func (u *dryRunBackupDriveUploader) drivePath(parts []string) string {
+	if len(parts) == 0 {
+		return backupDriveRootName
+	}
+	return backupDriveRootName + "/" + strings.Join(parts, "/")
 }
 
 type googleBackupDriveUploader struct {
@@ -102,11 +113,19 @@ func newGoogleBackupDriveUploader(ctx context.Context) (*googleBackupDriveUpload
 	if err != nil {
 		return nil, err
 	}
-	return &googleBackupDriveUploader{
+	uploader := &googleBackupDriveUploader{
 		httpClient:   http.DefaultClient,
 		accessToken:  token,
 		rootFolderID: strings.TrimSpace(os.Getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID")),
-	}, nil
+	}
+	if uploader.rootFolderID == "" {
+		root, err := uploader.ensureFolder(ctx, "", backupDriveRootName)
+		if err != nil {
+			return nil, err
+		}
+		uploader.rootFolderID = root.ID
+	}
+	return uploader, nil
 }
 
 func googleDriveAccessToken(ctx context.Context) (string, error) {
@@ -247,16 +266,13 @@ func parseServiceAccountPrivateKey(raw string) (*rsa.PrivateKey, error) {
 func (u *googleBackupDriveUploader) EnsureFolderPath(ctx context.Context, parts []string) (backupDriveFile, error) {
 	parentID := u.rootFolderID
 	var current backupDriveFile
+	if len(parts) == 0 {
+		return u.getFile(ctx, parentID)
+	}
 	for _, part := range parts {
-		found, err := u.findChild(ctx, parentID, part, driveFolderMimeType)
+		found, err := u.ensureFolder(ctx, parentID, part)
 		if err != nil {
 			return backupDriveFile{}, err
-		}
-		if found.ID == "" {
-			found, err = u.createFolder(ctx, part, parentID)
-			if err != nil {
-				return backupDriveFile{}, err
-			}
 		}
 		current = found
 		parentID = found.ID
@@ -280,6 +296,17 @@ func (u *googleBackupDriveUploader) CreateRunFolder(ctx context.Context, parts [
 		return backupDriveFile{}, fmt.Errorf("Google Drive run folder already exists: %s", strings.Join(parts, "/"))
 	}
 	return u.createFolder(ctx, parts[len(parts)-1], parent.ID)
+}
+
+func (u *googleBackupDriveUploader) ensureFolder(ctx context.Context, parentID string, name string) (backupDriveFile, error) {
+	found, err := u.findChild(ctx, parentID, name, driveFolderMimeType)
+	if err != nil {
+		return backupDriveFile{}, err
+	}
+	if found.ID != "" {
+		return found, nil
+	}
+	return u.createFolder(ctx, name, parentID)
 }
 
 func (u *googleBackupDriveUploader) UploadFile(ctx context.Context, path string, folderID string, name string) (backupDriveFile, error) {
@@ -334,6 +361,20 @@ func (u *googleBackupDriveUploader) findChild(ctx context.Context, parentID stri
 		return backupDriveFile{}, nil
 	}
 	return payload.Files[0], nil
+}
+
+func (u *googleBackupDriveUploader) getFile(ctx context.Context, fileID string) (backupDriveFile, error) {
+	if strings.TrimSpace(fileID) == "" {
+		return backupDriveFile{}, fmt.Errorf("Google Drive root folder ID is empty")
+	}
+	values := url.Values{}
+	values.Set("fields", "id,name,webViewLink")
+	values.Set("supportsAllDrives", "true")
+	var file backupDriveFile
+	if err := u.driveJSON(ctx, http.MethodGet, "https://www.googleapis.com/drive/v3/files/"+url.PathEscape(fileID)+"?"+values.Encode(), nil, "application/json", &file); err != nil {
+		return backupDriveFile{}, err
+	}
+	return file, nil
 }
 
 func (u *googleBackupDriveUploader) createFolder(ctx context.Context, name string, parentID string) (backupDriveFile, error) {
