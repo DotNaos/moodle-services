@@ -14,12 +14,13 @@ var (
 )
 
 type Course struct {
-	ID        int    `json:"id"`
-	Fullname  string `json:"fullname"`
-	Shortname string `json:"shortname"`
-	Category  string `json:"category"`
-	ViewURL   string `json:"viewUrl"`
-	HeroImage string `json:"heroImage"`
+	ID         int    `json:"id"`
+	Fullname   string `json:"fullname"`
+	Shortname  string `json:"shortname"`
+	Category   string `json:"category"`
+	CategoryID int    `json:"categoryId,omitempty"`
+	ViewURL    string `json:"viewUrl"`
+	HeroImage  string `json:"heroImage"`
 }
 
 type moodleAPICourse struct {

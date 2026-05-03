@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 	svc "github.com/DotNaos/moodle-services/pkg/moodleservices"
 )
 
@@ -23,5 +24,5 @@ func Search(w http.ResponseWriter, r *http.Request) {
 		svc.WriteError(w, err)
 		return
 	}
-	svc.WriteJSON(w, http.StatusOK, map[string]any{"results": results})
+	svc.WriteJSON(w, http.StatusOK, contract.SearchResponse{Results: results})
 }

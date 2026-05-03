@@ -16,6 +16,7 @@ import (
 type stubClient struct {
 	validateErr error
 	courses     []moodle.Course
+	categories  []moodle.Category
 	resources   map[string][]moodle.Resource
 }
 
@@ -36,6 +37,10 @@ func (s stubClient) FetchCourseResources(courseID string) ([]moodle.Resource, st
 		return nil, "", fmt.Errorf("course %s not found", courseID)
 	}
 	return res, "", nil
+}
+
+func (s stubClient) FetchCategories() ([]moodle.Category, error) {
+	return s.categories, nil
 }
 
 func TestHealthHandlerOK(t *testing.T) {
@@ -283,7 +288,7 @@ func TestHealthHandlerExpiredSession(t *testing.T) {
 
 func TestCoursesHandler(t *testing.T) {
 	wantCourses := []moodle.Course{
-		{ID: 1, Fullname: "Course A", Category: "Cat"},
+		{ID: 1, Fullname: "Course A", Category: "Cat", CategoryID: 42, HeroImage: "https://moodle.test/banner.jpg"},
 	}
 	router, err := NewRouter(ServerOptions{
 		ClientProvider: func() (Client, error) {
@@ -307,6 +312,38 @@ func TestCoursesHandler(t *testing.T) {
 	}
 	if len(got) != len(wantCourses) || got[0].ID != wantCourses[0].ID {
 		t.Fatalf("unexpected courses: %#v", got)
+	}
+	if got[0].CategoryID != 42 || got[0].HeroImage == "" {
+		t.Fatalf("course normalization was not preserved: %#v", got[0])
+	}
+}
+
+func TestCategoriesHandler(t *testing.T) {
+	wantCategories := []moodle.Category{
+		{ID: 42, Name: "FS26", ParentID: 10, Path: "/7/10/42", Depth: 3},
+	}
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{categories: wantCategories}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/categories", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	var got []moodle.Category
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != len(wantCategories) || got[0].Name != "FS26" {
+		t.Fatalf("unexpected categories: %#v", got)
 	}
 }
 

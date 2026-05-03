@@ -107,16 +107,56 @@ func (c *MobileClient) FetchCourses() ([]Course, error) {
 		return nil, err
 	}
 
+	categoryNames := map[int]string{}
+	if categories, err := c.FetchCategories(); err == nil {
+		categoryNames = CategoryNameByID(categories)
+	}
+
 	result := make([]Course, 0, len(courses))
 	for _, course := range courses {
+		category := categoryNames[course.CategoryID]
+		if category == "" && course.CategoryID != 0 {
+			category = strconv.Itoa(course.CategoryID)
+		}
 		result = append(result, Course{
-			ID:        course.ID,
-			Fullname:  DisplayCourseName(course.FullName, c.School.CourseNamePatterns),
-			Shortname: course.ShortName,
-			ViewURL:   strings.TrimRight(c.Session.SiteURL, "/") + "/course/view.php?id=" + strconv.Itoa(course.ID),
+			ID:         course.ID,
+			Fullname:   DisplayCourseName(course.FullName, c.School.CourseNamePatterns),
+			Shortname:  course.ShortName,
+			Category:   category,
+			CategoryID: course.CategoryID,
+			ViewURL:    strings.TrimRight(c.Session.SiteURL, "/") + "/course/view.php?id=" + strconv.Itoa(course.ID),
+			HeroImage:  course.CourseImage,
 		})
 	}
 	return result, nil
+}
+
+func (c *MobileClient) FetchCategories() ([]Category, error) {
+	var raw []mobileCategory
+	if err := c.callMobileAPI("core_course_get_categories", nil, &raw); err != nil {
+		return nil, err
+	}
+	categories := make([]Category, 0, len(raw))
+	for _, category := range raw {
+		categories = append(categories, Category{
+			ID:       category.ID,
+			Name:     category.Name,
+			IDNumber: category.IDNumber,
+			ParentID: category.ParentID,
+			Path:     category.Path,
+			Depth:    category.Depth,
+		})
+	}
+	return categories, nil
+}
+
+type mobileCategory struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	IDNumber string `json:"idnumber"`
+	ParentID int    `json:"parent"`
+	Path     string `json:"path"`
+	Depth    int    `json:"depth"`
 }
 
 func (c *MobileClient) FetchCourseResources(courseID string) ([]Resource, string, error) {
