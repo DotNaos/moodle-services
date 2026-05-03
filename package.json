@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "packageManager": "bun@1.3.9",
+  "workspaces": [
+    "apps/chatgpt-widget"
+  ],
+  "scripts": {
+    "build:chatgpt-widget": "cd apps/chatgpt-widget && bun run build && cd ../.. && cp apps/chatgpt-widget/dist/index.html pkg/chatgptapp/widget_dist.html"
+  }
+}

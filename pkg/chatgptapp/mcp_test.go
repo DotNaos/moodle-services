@@ -106,11 +106,11 @@ func TestMCPWidgetResourceIncludesDomain(t *testing.T) {
 		t.Fatalf("expected widget domain %q, got %#v", widgetDomain, ui)
 	}
 	csp := ui["csp"].(map[string]any)
-	if !strings.Contains(fmt.Sprint(csp["resourceDomains"]), "cdn.jsdelivr.net") {
-		t.Fatalf("expected PDF.js resource domain, got %#v", csp)
+	if !strings.Contains(fmt.Sprint(csp["connectDomains"]), widgetDomain) {
+		t.Fatalf("expected widget API connect domain, got %#v", csp)
 	}
-	if !strings.Contains(fmt.Sprint(csp["resourceDomains"]), "cdn.tailwindcss.com") {
-		t.Fatalf("expected Tailwind resource domain, got %#v", csp)
+	if fmt.Sprint(csp["resourceDomains"]) != "[]" {
+		t.Fatalf("expected bundled widget with no external resource domains, got %#v", csp)
 	}
 }
 
