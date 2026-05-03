@@ -89,16 +89,16 @@ type googleServiceAccount struct {
 	TokenURI    string `json:"token_uri"`
 }
 
+type googleAuthorizedUser struct {
+	Type         string `json:"type"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RefreshToken string `json:"refresh_token"`
+	TokenURI     string `json:"token_uri"`
+}
+
 func newGoogleBackupDriveUploader(ctx context.Context) (*googleBackupDriveUploader, error) {
-	raw := strings.TrimSpace(os.Getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON"))
-	if raw == "" {
-		return nil, fmt.Errorf("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON is required when --upload is used")
-	}
-	var account googleServiceAccount
-	if err := json.Unmarshal([]byte(raw), &account); err != nil {
-		return nil, fmt.Errorf("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON is not valid JSON: %w", err)
-	}
-	token, err := googleServiceAccountAccessToken(ctx, account)
+	token, err := googleDriveAccessToken(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -107,6 +107,65 @@ func newGoogleBackupDriveUploader(ctx context.Context) (*googleBackupDriveUpload
 		accessToken:  token,
 		rootFolderID: strings.TrimSpace(os.Getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID")),
 	}, nil
+}
+
+func googleDriveAccessToken(ctx context.Context) (string, error) {
+	if raw := strings.TrimSpace(os.Getenv("GOOGLE_DRIVE_OAUTH_CREDENTIALS_JSON")); raw != "" {
+		var credentials googleAuthorizedUser
+		if err := json.Unmarshal([]byte(raw), &credentials); err != nil {
+			return "", fmt.Errorf("GOOGLE_DRIVE_OAUTH_CREDENTIALS_JSON is not valid JSON: %w", err)
+		}
+		return googleAuthorizedUserAccessToken(ctx, credentials)
+	}
+	raw := strings.TrimSpace(os.Getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON"))
+	if raw == "" {
+		return "", fmt.Errorf("GOOGLE_DRIVE_OAUTH_CREDENTIALS_JSON or GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON is required when --upload is used")
+	}
+	var account googleServiceAccount
+	if err := json.Unmarshal([]byte(raw), &account); err != nil {
+		return "", fmt.Errorf("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON is not valid JSON: %w", err)
+	}
+	return googleServiceAccountAccessToken(ctx, account)
+}
+
+func googleAuthorizedUserAccessToken(ctx context.Context, credentials googleAuthorizedUser) (string, error) {
+	if credentials.ClientID == "" || credentials.ClientSecret == "" || credentials.RefreshToken == "" {
+		return "", fmt.Errorf("OAuth credentials JSON must include client_id, client_secret, and refresh_token")
+	}
+	tokenURI := credentials.TokenURI
+	if tokenURI == "" {
+		tokenURI = "https://oauth2.googleapis.com/token"
+	}
+	form := url.Values{
+		"client_id":     {credentials.ClientID},
+		"client_secret": {credentials.ClientSecret},
+		"refresh_token": {credentials.RefreshToken},
+		"grant_type":    {"refresh_token"},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURI, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("Google OAuth token request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var payload struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", err
+	}
+	if payload.AccessToken == "" {
+		return "", fmt.Errorf("Google OAuth token response did not include access_token")
+	}
+	return payload.AccessToken, nil
 }
 
 func googleServiceAccountAccessToken(ctx context.Context, account googleServiceAccount) (string, error) {
