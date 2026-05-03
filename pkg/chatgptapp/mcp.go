@@ -314,8 +314,8 @@ func (h Handler) widgetContent() map[string]any {
 				"prefersBorder": true,
 				"domain":        widgetDomain,
 				"csp": map[string]any{
-					"connectDomains":  []string{widgetDomain, "https://cdn.jsdelivr.net"},
-					"resourceDomains": []string{"https://cdn.jsdelivr.net", "https://cdn.tailwindcss.com"},
+					"connectDomains":  []string{widgetDomain},
+					"resourceDomains": []string{},
 				},
 			},
 			"openai/widgetDescription": "Displays Moodle courses, course materials, calendar events, and embedded PDFs.",

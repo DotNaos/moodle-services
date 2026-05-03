@@ -1,6 +1,9 @@
 .DS_Store
 .env
 bin/
+node_modules/
+apps/chatgpt-widget/dist/
+test-results/
 *.log
 .moodle-cli/
 .vercel
