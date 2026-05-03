@@ -1,0 +1,258 @@
+package cli
+
+import (
+	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/DotNaos/moodle-services/internal/moodle"
+	"gopkg.in/yaml.v3"
+)
+
+type backupCourseManifest struct {
+	Semester             string            `yaml:"semester" json:"semester"`
+	CourseID             string            `yaml:"course_id" json:"courseId"`
+	CourseSlug           string            `yaml:"course_slug" json:"courseSlug"`
+	CourseName           string            `yaml:"course_name" json:"courseName"`
+	RunID                string            `yaml:"run_id" json:"runId"`
+	GoogleDriveFolderID  string            `yaml:"google_drive_folder_id" json:"googleDriveFolderId"`
+	GoogleDriveFileIDs   []string          `yaml:"google_drive_file_ids" json:"googleDriveFileIds"`
+	GoogleDriveLink      string            `yaml:"google_drive_link" json:"googleDriveLink"`
+	RawZipFilename       string            `yaml:"raw_zip_filename" json:"rawZipFilename"`
+	SHA256               string            `yaml:"sha256" json:"sha256"`
+	BackupStatus         string            `yaml:"backup_status" json:"backupStatus"`
+	BackedUpAt           string            `yaml:"backed_up_at" json:"backedUpAt"`
+	SourceMoodleMetadata map[string]string `yaml:"source_moodle_metadata" json:"sourceMoodleMetadata"`
+}
+
+type backupMaterialIndex struct {
+	Semester             string                 `yaml:"semester"`
+	CourseID             string                 `yaml:"course_id"`
+	CourseSlug           string                 `yaml:"course_slug"`
+	CourseName           string                 `yaml:"course_name"`
+	RunID                string                 `yaml:"run_id"`
+	RawZipFilename       string                 `yaml:"raw_zip_filename"`
+	RawZipSHA256         string                 `yaml:"raw_zip_sha256"`
+	RawGoogleDriveFileID string                 `yaml:"raw_google_drive_file_id"`
+	RawGoogleDriveLink   string                 `yaml:"raw_google_drive_link"`
+	Materials            []backupZipEntry       `yaml:"materials"`
+	MoodleResources      []moodle.Resource      `yaml:"moodle_resources"`
+	TextExtraction       []backupTextExtraction `yaml:"text_extraction"`
+}
+
+type backupZipEntry struct {
+	Path           string `yaml:"path"`
+	CompressedSize uint64 `yaml:"compressed_size"`
+	Size           uint64 `yaml:"size"`
+	CRC            string `yaml:"crc"`
+}
+
+type backupTextExtraction struct {
+	ResourceID string `yaml:"resource_id"`
+	Status     string `yaml:"status"`
+	Path       string `yaml:"path,omitempty"`
+	Error      string `yaml:"error,omitempty"`
+}
+
+type backupRunYAML struct {
+	Semester         string `yaml:"semester"`
+	Run              string `yaml:"run"`
+	GitHubRunID      string `yaml:"github_run_id"`
+	GitHubRunAttempt string `yaml:"github_run_attempt"`
+	Status           string `yaml:"status"`
+	StartedAt        string `yaml:"started_at"`
+	CompletedAt      string `yaml:"completed_at"`
+}
+
+type backupLatestYAML struct {
+	Semester  string `yaml:"semester"`
+	LatestRun string `yaml:"latest_run"`
+	Status    string `yaml:"status"`
+	UpdatedAt string `yaml:"updated_at"`
+}
+
+func ensureBackupCourseFiles(course backupCourse) error {
+	if err := os.MkdirAll(course.Dir, 0o755); err != nil {
+		return err
+	}
+	readme := filepath.Join(course.Dir, "README.md")
+	if _, err := os.Stat(readme); os.IsNotExist(err) {
+		content := fmt.Sprintf("# %s\n\n- Moodle: [%s](%s)\n- Moodle snapshot: see `MOODLE.md` after running the sync.\n", course.Title, course.Fullname, course.ViewURL)
+		if err := os.WriteFile(readme, []byte(content), 0o644); err != nil {
+			return err
+		}
+	}
+	tasks := filepath.Join(course.Dir, "TASKS.md")
+	if _, err := os.Stat(tasks); os.IsNotExist(err) {
+		content := fmt.Sprintf("# %s Tasks\n\n## Manual Tasks\n\n## Moodle Sync\n\n<!-- BEGIN MOODLE SYNC -->\n<!-- END MOODLE SYNC -->\n", course.Title)
+		return os.WriteFile(tasks, []byte(content), 0o644)
+	}
+	return nil
+}
+
+func writeBackupCourseSnapshot(course backupCourse, readerText string, resources []moodle.Resource) error {
+	if strings.TrimSpace(readerText) == "" {
+		readerText = "No readable course content found."
+	}
+	md := "# " + course.Title + "\n\n"
+	if course.ViewURL != "" {
+		md += "Source: " + course.ViewURL + "\n\n"
+	}
+	md += strings.TrimSpace(readerText) + "\n"
+	if err := os.WriteFile(filepath.Join(course.Dir, "MOODLE.md"), []byte(md), 0o644); err != nil {
+		return err
+	}
+	snapshot := map[string]any{
+		"id":        course.ID,
+		"title":     course.Title,
+		"fullname":  course.Fullname,
+		"shortname": course.Shortname,
+		"category":  course.Category,
+		"url":       course.ViewURL,
+		"resources": resources,
+	}
+	data, err := yaml.Marshal(snapshot)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(course.Dir, "moodle-course.yaml"), data, 0o644)
+}
+
+func writeBackupMaterialIndex(course backupCourse, run backupRunContext, zipPath string, zipSHA string, upload backupDriveFile, resources []moodle.Resource, textResults []backupTextExtraction) (backupMaterialIndex, error) {
+	entries, err := readBackupZipEntries(zipPath)
+	if err != nil {
+		return backupMaterialIndex{}, err
+	}
+	index := backupMaterialIndex{
+		Semester:             run.Semester,
+		CourseID:             fmt.Sprintf("%d", course.ID),
+		CourseSlug:           course.Slug,
+		CourseName:           course.Title,
+		RunID:                run.RunID,
+		RawZipFilename:       filepath.Base(zipPath),
+		RawZipSHA256:         zipSHA,
+		RawGoogleDriveFileID: upload.ID,
+		RawGoogleDriveLink:   upload.WebViewLink,
+		Materials:            entries,
+		MoodleResources:      resources,
+		TextExtraction:       textResults,
+	}
+	data, err := yaml.Marshal(index)
+	if err != nil {
+		return backupMaterialIndex{}, err
+	}
+	return index, os.WriteFile(filepath.Join(course.Dir, "materials.index.yaml"), data, 0o644)
+}
+
+func readBackupZipEntries(path string) ([]backupZipEntry, error) {
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	entries := make([]backupZipEntry, 0, len(reader.File))
+	for _, file := range reader.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		entries = append(entries, backupZipEntry{
+			Path:           file.Name,
+			CompressedSize: file.CompressedSize64,
+			Size:           file.UncompressedSize64,
+			CRC:            fmt.Sprintf("%08x", file.CRC32),
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	return entries, nil
+}
+
+func sha256File(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func extractBackupResourceTexts(client *moodle.Client, course backupCourse, resources []moodle.Resource) []backupTextExtraction {
+	results := make([]backupTextExtraction, 0)
+	textDir := filepath.Join(course.Dir, "materials-text")
+	for _, resource := range resources {
+		if resource.Type != "resource" || strings.TrimSpace(resource.ID) == "" {
+			continue
+		}
+		text, err := renderDownloadedResource(client, resource.URL, resource.FileType, false)
+		if err != nil {
+			results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "failed", Error: err.Error()})
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text == "" {
+			results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "empty"})
+			continue
+		}
+		if err := os.MkdirAll(textDir, 0o755); err != nil {
+			results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "failed", Error: err.Error()})
+			continue
+		}
+		filename := slugifyBackupName(resource.Name)
+		if filename == "" {
+			filename = "resource-" + resource.ID
+		}
+		path := filepath.Join(textDir, filename+".md")
+		content := "# " + resource.Name + "\n\n" + text + "\n"
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "failed", Error: err.Error()})
+			continue
+		}
+		rel, _ := filepath.Rel(course.Dir, path)
+		results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "ok", Path: filepath.ToSlash(rel)})
+	}
+	return results
+}
+
+func renderBackupReport(run backupRunContext, status string, manifests []backupCourseManifest, failures []string) string {
+	lines := []string{
+		"# Moodle FHGR Backup Report: " + run.Semester,
+		"",
+		"- Run: `" + run.RunID + "`",
+		"- Status: `" + status + "`",
+		fmt.Sprintf("- Courses processed: %d", len(manifests)),
+		fmt.Sprintf("- Failures: %d", len(failures)),
+		"",
+		"## Courses",
+		"",
+	}
+	if len(manifests) == 0 {
+		lines = append(lines, "- None")
+	}
+	for _, item := range manifests {
+		lines = append(lines, fmt.Sprintf("- %s (%s): `%s` sha256 `%s`", item.CourseSlug, item.CourseID, item.RawZipFilename, item.SHA256))
+	}
+	if len(failures) > 0 {
+		lines = append(lines, "", "## Failures", "")
+		for _, failure := range failures {
+			lines = append(lines, "- "+failure)
+		}
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func yamlString(value any) (string, error) {
+	data, err := yaml.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func isoUTC(t time.Time) string {
+	return t.UTC().Truncate(time.Second).Format(time.RFC3339)
+}
