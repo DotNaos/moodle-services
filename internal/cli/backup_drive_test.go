@@ -59,3 +59,18 @@ func TestGoogleDriveAccessTokenRequiresCredentials(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestDryRunBackupDriveUploaderUsesExportRoot(t *testing.T) {
+	uploader := newDryRunBackupDriveUploader()
+
+	folder, err := uploader.EnsureFolderPath(context.Background(), []string{"FS26"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if folder.Name != "FS26" {
+		t.Fatalf("folder name = %q, want FS26", folder.Name)
+	}
+	if _, ok := uploader.ids[backupDriveRootName+"/FS26"]; !ok {
+		t.Fatalf("expected dry run path to be rooted under %s", backupDriveRootName)
+	}
+}

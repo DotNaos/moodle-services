@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	backupDriveRootName    = "moodle-fhgr"
-	backupIndexFile        = "backup.index.yaml"
+	backupDriveRootName    = "fhgr-moodle-export"
+	backupIndexFile        = "export.index.yaml"
 	backupStatusComplete   = "complete"
 	backupStatusIncomplete = "incomplete"
 )

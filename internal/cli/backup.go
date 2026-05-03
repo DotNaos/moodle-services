@@ -31,48 +31,53 @@ type backupSemesterResult struct {
 }
 
 var backupCmd = &cobra.Command{
-	Use:   "backup",
-	Short: "Back up Moodle course material",
-	Long:  "Back up Moodle course material and generate lightweight course indexes.",
-}
-
-var backupFHGRCmd = &cobra.Command{
-	Use:   "fhgr",
-	Short: "Back up FHGR Moodle material for a school workspace",
-	Long: "Back up FHGR Moodle material for a school workspace.\n\n" +
-		"The command reads school.yaml, always processes current_term, and processes old semesters only when backup.index.yaml does not show a completed backup.",
-	Example: "  moodle backup fhgr --workspace /Users/oli/school --upload\n" +
-		"  moodle backup fhgr --workspace /Users/oli/school --semester FS26 --upload",
-	Args: cobra.NoArgs,
-	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := runMoodleBackupFHGR(cmd.Context(), backupWorkspace, backupSemesterFlag, backupUpload)
-		if err != nil {
-			return err
-		}
-		return writeCommandOutput(cmd, result, func(w io.Writer) error {
-			for _, item := range result.Results {
-				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d courses\n", item.Semester, item.RunID, item.Status, item.Courses); err != nil {
-					return err
-				}
-				for _, failure := range item.Failures {
-					if _, err := fmt.Fprintf(w, "  failure: %s\n", failure); err != nil {
-						return err
-					}
-				}
-			}
-			return nil
-		})
-	},
+	Use:    "backup",
+	Short:  "Back up Moodle course material",
+	Long:   "Back up Moodle course material and generate lightweight course indexes.",
+	Hidden: true,
 }
 
 func init() {
-	backupFHGRCmd.Flags().StringVar(&backupWorkspace, "workspace", ".", "School workspace root containing school.yaml")
-	backupFHGRCmd.Flags().StringVar(&backupSemesterFlag, "semester", "", "Process one semester only")
-	backupFHGRCmd.Flags().BoolVar(&backupUpload, "upload", false, "Upload raw and processed output to Google Drive")
-	backupCmd.AddCommand(backupFHGRCmd)
+	exportCmd.AddCommand(newFHGRExportCommand(false))
+	backupCmd.AddCommand(newFHGRExportCommand(true))
+}
+
+func newFHGRExportCommand(hidden bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "fhgr",
+		Short: "Export FHGR Moodle material for a school workspace",
+		Long:  "Export FHGR Moodle material for a school workspace.\n\nThe command reads school.yaml, always processes current_term, and processes old semesters only when export.index.yaml does not show a completed export.",
+		Example: "  moodle export fhgr --workspace /Users/oli/school --upload\n" +
+			"  moodle export fhgr --workspace /Users/oli/school --semester FS26 --upload",
+		Args:   cobra.NoArgs,
+		Hidden: hidden,
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			result, err := runMoodleBackupFHGR(cmd.Context(), backupWorkspace, backupSemesterFlag, backupUpload)
+			if err != nil {
+				return err
+			}
+			return writeCommandOutput(cmd, result, func(w io.Writer) error {
+				for _, item := range result.Results {
+					if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d courses\n", item.Semester, item.RunID, item.Status, item.Courses); err != nil {
+						return err
+					}
+					for _, failure := range item.Failures {
+						if _, err := fmt.Fprintf(w, "  failure: %s\n", failure); err != nil {
+							return err
+						}
+					}
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&backupWorkspace, "workspace", ".", "School workspace root containing school.yaml")
+	cmd.Flags().StringVar(&backupSemesterFlag, "semester", "", "Process one semester only")
+	cmd.Flags().BoolVar(&backupUpload, "upload", false, "Upload raw and processed output to Google Drive")
+	return cmd
 }
 
 func runMoodleBackupFHGR(ctx context.Context, workspace string, semester string, upload bool) (backupCommandResult, error) {
@@ -101,7 +106,7 @@ func runMoodleBackupFHGR(ctx context.Context, workspace string, semester string,
 		return backupCommandResult{}, err
 	}
 
-	result := backupCommandResult{Action: "backup-fhgr", Results: make([]backupSemesterResult, 0, len(selected))}
+	result := backupCommandResult{Action: "export-fhgr", Results: make([]backupSemesterResult, 0, len(selected))}
 	for _, term := range selected {
 		semesterResult, err := backupSemesterRun(ctx, client, root, cfg, term, uploader, &index)
 		if err != nil {
@@ -133,19 +138,19 @@ func backupSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 	if err != nil {
 		return backupSemesterResult{}, err
 	}
-	semesterFolder, err := uploader.EnsureFolderPath(ctx, []string{backupDriveRootName, semester})
+	semesterFolder, err := uploader.EnsureFolderPath(ctx, []string{semester})
 	if err != nil {
 		return backupSemesterResult{}, err
 	}
-	runFolder, err := uploader.CreateRunFolder(ctx, []string{backupDriveRootName, semester, run.RunID})
+	runFolder, err := uploader.CreateRunFolder(ctx, []string{semester, run.RunID})
 	if err != nil {
 		return backupSemesterResult{}, err
 	}
-	rawFolder, err := uploader.EnsureFolderPath(ctx, []string{backupDriveRootName, semester, run.RunID, "raw"})
+	rawFolder, err := uploader.EnsureFolderPath(ctx, []string{semester, run.RunID, "raw"})
 	if err != nil {
 		return backupSemesterResult{}, err
 	}
-	processedFolder, err := uploader.EnsureFolderPath(ctx, []string{backupDriveRootName, semester, run.RunID, "processed"})
+	processedFolder, err := uploader.EnsureFolderPath(ctx, []string{semester, run.RunID, "processed"})
 	if err != nil {
 		return backupSemesterResult{}, err
 	}
