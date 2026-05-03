@@ -252,12 +252,12 @@ func renderBackupResourceText(client *moodle.Client, resource moodle.Resource) (
 		if err != nil {
 			return "", err
 		}
-		return cleanExtractedTextWithTimeout(text, 2*time.Second), nil
+		return sanitizeBackupText(cleanExtractedTextWithTimeout(text, 2*time.Second)), nil
 	}
 	if !isBackupPlainTextResource(fileType, contentType, result.Data) {
 		return "", fmt.Errorf("%w: %s (%s)", errBackupUnsupportedTextResource, resource.Name, result.ContentType)
 	}
-	return string(result.Data), nil
+	return sanitizeBackupText(string(result.Data)), nil
 }
 
 func isBackupPlainTextResource(fileType string, contentType string, data []byte) bool {
@@ -309,6 +309,15 @@ func looksLikeBackupText(data []byte) bool {
 		return true
 	}
 	return suspicious*100/total < 5
+}
+
+func sanitizeBackupText(input string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
+			return ' '
+		}
+		return r
+	}, input)
 }
 
 func renderBackupReport(run backupRunContext, status string, manifests []backupCourseManifest, failures []string) string {
