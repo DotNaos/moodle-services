@@ -315,7 +315,7 @@ func (h Handler) widgetContent() map[string]any {
 				"domain":        widgetDomain,
 				"csp": map[string]any{
 					"connectDomains":  []string{widgetDomain},
-					"resourceDomains": []string{},
+					"resourceDomains": []string{"https://cdn.jsdelivr.net"},
 				},
 			},
 			"openai/widgetDescription": "Displays Moodle courses, course materials, calendar events, and embedded PDFs.",

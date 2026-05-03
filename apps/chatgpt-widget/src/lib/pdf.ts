@@ -1,8 +1,7 @@
 import * as pdfjsLib from "pdfjs-dist";
-import pdfWorkerURL from "pdfjs-dist/build/pdf.worker.mjs?url";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerURL;
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs";
 
 export type PDFLib = typeof pdfjsLib;
 

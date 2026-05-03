@@ -109,8 +109,8 @@ func TestMCPWidgetResourceIncludesDomain(t *testing.T) {
 	if !strings.Contains(fmt.Sprint(csp["connectDomains"]), widgetDomain) {
 		t.Fatalf("expected widget API connect domain, got %#v", csp)
 	}
-	if fmt.Sprint(csp["resourceDomains"]) != "[]" {
-		t.Fatalf("expected bundled widget with no external resource domains, got %#v", csp)
+	if !strings.Contains(fmt.Sprint(csp["resourceDomains"]), "cdn.jsdelivr.net") {
+		t.Fatalf("expected PDF.js worker resource domain, got %#v", csp)
 	}
 }
 
