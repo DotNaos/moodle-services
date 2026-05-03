@@ -51,6 +51,15 @@ moodle download file <course-id|name|current|0> <resource-id|name|current|0> --o
 moodle export course <course-id|name|current|0> --output-dir <path>
 ```
 
+## Backup FHGR Moodle to Drive
+
+```sh
+moodle backup fhgr --workspace /Users/oli/school --upload
+moodle backup fhgr --workspace /Users/oli/school --semester FS26 --upload
+```
+
+The command reads `school.yaml`, always processes `current_term`, and only backfills older semesters when `backup.index.yaml` does not already show a completed backup.
+
 ## Shell completion
 
 ```sh
