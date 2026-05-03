@@ -109,6 +109,9 @@ func TestMCPWidgetResourceIncludesDomain(t *testing.T) {
 	if !strings.Contains(fmt.Sprint(csp["resourceDomains"]), "cdn.jsdelivr.net") {
 		t.Fatalf("expected PDF.js resource domain, got %#v", csp)
 	}
+	if !strings.Contains(fmt.Sprint(csp["resourceDomains"]), "cdn.tailwindcss.com") {
+		t.Fatalf("expected Tailwind resource domain, got %#v", csp)
+	}
 }
 
 func TestMCPPDFViewStateAndCapture(t *testing.T) {
@@ -121,6 +124,12 @@ func TestMCPPDFViewStateAndCapture(t *testing.T) {
 		"page":              2,
 		"pageCount":         16,
 		"screenshotDataURL": "data:image/jpeg;base64,ZmFrZQ==",
+		"selectionDataURL":  "data:image/jpeg;base64,c2VsZWN0aW9u",
+		"selectionPage":     2,
+		"selectionX":        10,
+		"selectionY":        20,
+		"selectionWidth":    300,
+		"selectionHeight":   140,
 	})
 
 	stateResp := callTool(t, handler, "get_pdf_view_state", map[string]any{})
@@ -135,12 +144,19 @@ func TestMCPPDFViewStateAndCapture(t *testing.T) {
 	if image["type"] != "image" || image["mimeType"] != "image/jpeg" {
 		t.Fatalf("expected image content, got %#v", image)
 	}
+
+	selectionResp := callTool(t, handler, "get_pdf_selection", map[string]any{})
+	selectionContent := selectionResp["result"].(map[string]any)["content"].([]any)
+	selectionImage := selectionContent[1].(map[string]any)
+	if selectionImage["type"] != "image" || selectionImage["data"] != "c2VsZWN0aW9u" {
+		t.Fatalf("expected selected area image, got %#v", selectionImage)
+	}
 }
 
 func TestMCPRenderPDFViewerReturnsEmbeddedViewerMetadata(t *testing.T) {
 	handler := testHandler()
 	handler.APIKey = "secret"
-	resp := callTool(t, handler, "render_pdf_viewer", map[string]any{"courseId": "42", "resourceId": "100", "page": 3})
+	resp := callTool(t, handler, "render_pdf_viewer", map[string]any{"courseId": "42", "resourceId": "100", "page": 3, "zoom": 1.4})
 
 	result := resp["result"].(map[string]any)
 	content := result["structuredContent"].(map[string]any)
@@ -151,6 +167,9 @@ func TestMCPRenderPDFViewerReturnsEmbeddedViewerMetadata(t *testing.T) {
 	target := viewer["target"].(map[string]any)
 	if target["page"] != float64(3) && target["page"] != 3 {
 		t.Fatalf("expected page target, got %#v", target)
+	}
+	if target["zoom"] != float64(1.4) {
+		t.Fatalf("expected zoom target, got %#v", target)
 	}
 	meta := result["_meta"].(map[string]any)
 	if !strings.Contains(meta["pdfUrl"].(string), "/api/pdf?") || !strings.Contains(meta["pdfUrl"].(string), "key=secret") {

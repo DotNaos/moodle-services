@@ -22,6 +22,12 @@ type pdfViewState struct {
 	Page              int    `json:"page"`
 	PageCount         int    `json:"pageCount"`
 	ScreenshotDataURL string `json:"screenshotDataURL,omitempty"`
+	SelectionDataURL  string `json:"selectionDataURL,omitempty"`
+	SelectionPage     int    `json:"selectionPage,omitempty"`
+	SelectionX        int    `json:"selectionX,omitempty"`
+	SelectionY        int    `json:"selectionY,omitempty"`
+	SelectionWidth    int    `json:"selectionWidth,omitempty"`
+	SelectionHeight   int    `json:"selectionHeight,omitempty"`
 }
 
 var pdfStates = struct {
@@ -166,31 +172,33 @@ func (h Handler) callTool(name string, args json.RawMessage) (any, error) {
 		return widgetResult(map[string]any{"document": doc}, "Extracted material text."), err
 	case "render_pdf_viewer":
 		var input struct {
-			CourseID   string `json:"courseId"`
-			ResourceID string `json:"resourceId"`
-			Page       int    `json:"page"`
-			Query      string `json:"query"`
+			CourseID   string  `json:"courseId"`
+			ResourceID string  `json:"resourceId"`
+			Page       int     `json:"page"`
+			Query      string  `json:"query"`
+			Zoom       float64 `json:"zoom"`
 		}
 		_ = json.Unmarshal(args, &input)
 		data, err := h.Service.PDFViewerData(input.CourseID, input.ResourceID)
 		if err != nil {
 			return nil, err
 		}
-		attachPDFTarget(data, input.Page, input.Query)
+		attachPDFTarget(data, input.Page, input.Query, input.Zoom)
 		return h.pdfWidgetResult(data, input.CourseID, input.ResourceID, "Showing the embedded PDF viewer."), nil
 	case "open_pdf_location":
 		var input struct {
-			CourseID   string `json:"courseId"`
-			ResourceID string `json:"resourceId"`
-			Page       int    `json:"page"`
-			Query      string `json:"query"`
+			CourseID   string  `json:"courseId"`
+			ResourceID string  `json:"resourceId"`
+			Page       int     `json:"page"`
+			Query      string  `json:"query"`
+			Zoom       float64 `json:"zoom"`
 		}
 		_ = json.Unmarshal(args, &input)
 		data, err := h.Service.PDFViewerData(input.CourseID, input.ResourceID)
 		if err != nil {
 			return nil, err
 		}
-		attachPDFTarget(data, input.Page, input.Query)
+		attachPDFTarget(data, input.Page, input.Query, input.Zoom)
 		return h.pdfWidgetResult(data, input.CourseID, input.ResourceID, "Moved the embedded PDF viewer to the requested location."), nil
 	case "get_pdf_view_state":
 		state, ok := h.pdfViewState()
@@ -211,6 +219,22 @@ func (h Handler) callTool(name string, args json.RawMessage) (any, error) {
 			"structuredContent": map[string]any{"captured": true, "state": publicPDFState(state)},
 			"content": []any{
 				map[string]any{"type": "text", "text": fmt.Sprintf("Captured page %d of %d from %s.", state.Page, state.PageCount, state.Title)},
+				map[string]any{"type": "image", "data": data, "mimeType": mimeType},
+			},
+		}, nil
+	case "get_pdf_selection":
+		state, ok := h.pdfViewState()
+		if !ok || state.SelectionDataURL == "" {
+			return textJSON(map[string]any{"selected": false, "status": "No PDF area selection has been reported by the widget yet. Use the Ask button in the PDF viewer first."}), nil
+		}
+		mimeType, data := splitDataURL(state.SelectionDataURL)
+		if data == "" {
+			return textJSON(map[string]any{"selected": false, "status": "The reported selection was not a valid data URL."}), nil
+		}
+		return map[string]any{
+			"structuredContent": map[string]any{"selected": true, "state": publicPDFState(state), "selection": publicPDFSelection(state)},
+			"content": []any{
+				map[string]any{"type": "text", "text": fmt.Sprintf("Captured selected area on page %d from %s.", state.SelectionPage, state.Title)},
 				map[string]any{"type": "image", "data": data, "mimeType": mimeType},
 			},
 		}, nil
@@ -236,6 +260,7 @@ func (h Handler) tools() []any {
 		tool("open_pdf_location", "Scroll PDF viewer", "Use this when a PDF is open and the user wants to jump to a page or to text inside that PDF.", pdfToolProperties(), []string{"courseId", "resourceId"}, true, true),
 		tool("get_pdf_view_state", "Get PDF viewer state", "Use this when the user asks whether a PDF is currently open or where the visible PDF view is. The widget reports live state while the PDF is open.", map[string]any{}, nil, true, false),
 		tool("capture_pdf_view", "Capture PDF view", "Use this when the user asks for a screenshot or visual capture of the currently visible embedded PDF page.", map[string]any{}, nil, true, false),
+		tool("get_pdf_selection", "Get PDF selection", "Use this when the user selected an area in the PDF widget with the Ask button and wants help with that selected screenshot.", map[string]any{}, nil, true, false),
 		tool("save_pdf_view_state", "Save PDF view state", "Use this only when called by the widget to report the current PDF page and screenshot back to the MCP server.", pdfStateToolProperties(), []string{"title", "page", "pageCount"}, false, false),
 	}
 }
@@ -290,7 +315,7 @@ func (h Handler) widgetContent() map[string]any {
 				"domain":        widgetDomain,
 				"csp": map[string]any{
 					"connectDomains":  []string{widgetDomain, "https://cdn.jsdelivr.net"},
-					"resourceDomains": []string{"https://cdn.jsdelivr.net"},
+					"resourceDomains": []string{"https://cdn.jsdelivr.net", "https://cdn.tailwindcss.com"},
 				},
 			},
 			"openai/widgetDescription": "Displays Moodle courses, course materials, calendar events, and embedded PDFs.",
@@ -343,6 +368,9 @@ func (h Handler) savePDFViewState(state pdfViewState) {
 	if len(state.ScreenshotDataURL) > 2_500_000 {
 		state.ScreenshotDataURL = ""
 	}
+	if len(state.SelectionDataURL) > 2_500_000 {
+		state.SelectionDataURL = ""
+	}
 	pdfStates.Lock()
 	defer pdfStates.Unlock()
 	pdfStates.byKey[h.pdfStateKey()] = state
@@ -362,10 +390,21 @@ func publicPDFState(state pdfViewState) map[string]any {
 		"resourceId": state.ResourceID,
 		"page":       state.Page,
 		"pageCount":  state.PageCount,
+		"selection":  state.SelectionDataURL != "",
 	}
 }
 
-func attachPDFTarget(data map[string]any, page int, query string) {
+func publicPDFSelection(state pdfViewState) map[string]any {
+	return map[string]any{
+		"page":   state.SelectionPage,
+		"x":      state.SelectionX,
+		"y":      state.SelectionY,
+		"width":  state.SelectionWidth,
+		"height": state.SelectionHeight,
+	}
+}
+
+func attachPDFTarget(data map[string]any, page int, query string, zoom float64) {
 	viewer, ok := data["viewer"].(PDFDescriptor)
 	if !ok {
 		return
@@ -376,6 +415,9 @@ func attachPDFTarget(data map[string]any, page int, query string) {
 	}
 	if strings.TrimSpace(query) != "" {
 		target["query"] = strings.TrimSpace(query)
+	}
+	if zoom > 0 {
+		target["zoom"] = zoom
 	}
 	data["viewer"] = map[string]any{
 		"id":          viewer.ID,
@@ -394,6 +436,7 @@ func pdfToolProperties() map[string]any {
 		"resourceId": stringSchema("Moodle PDF resource id."),
 		"page":       map[string]any{"type": "integer", "minimum": 1, "description": "Optional 1-based PDF page to scroll to."},
 		"query":      stringSchema("Optional text to find visually in the PDF and scroll to."),
+		"zoom":       map[string]any{"type": "number", "minimum": 0.5, "maximum": 2.75, "description": "Optional zoom factor for the PDF viewer, where 1.0 is normal size."},
 	}
 }
 
@@ -405,6 +448,12 @@ func pdfStateToolProperties() map[string]any {
 		"page":              map[string]any{"type": "integer", "minimum": 1, "description": "Current visible PDF page."},
 		"pageCount":         map[string]any{"type": "integer", "minimum": 1, "description": "Total PDF page count."},
 		"screenshotDataURL": stringSchema("Optional data URL screenshot of the current PDF page."),
+		"selectionDataURL":  stringSchema("Optional data URL screenshot of a user-selected PDF area."),
+		"selectionPage":     map[string]any{"type": "integer", "minimum": 0, "description": "PDF page containing the selected area."},
+		"selectionX":        map[string]any{"type": "integer", "minimum": 0, "description": "Selected area x-coordinate in rendered CSS pixels."},
+		"selectionY":        map[string]any{"type": "integer", "minimum": 0, "description": "Selected area y-coordinate in rendered CSS pixels."},
+		"selectionWidth":    map[string]any{"type": "integer", "minimum": 0, "description": "Selected area width in rendered CSS pixels."},
+		"selectionHeight":   map[string]any{"type": "integer", "minimum": 0, "description": "Selected area height in rendered CSS pixels."},
 	}
 }
 
