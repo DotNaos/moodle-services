@@ -29,7 +29,7 @@ type backupCourseManifest struct {
 	GoogleDriveLink      string            `yaml:"google_drive_link" json:"googleDriveLink"`
 	RawZipFilename       string            `yaml:"raw_zip_filename" json:"rawZipFilename"`
 	SHA256               string            `yaml:"sha256" json:"sha256"`
-	BackupStatus         string            `yaml:"backup_status" json:"backupStatus"`
+	BackupStatus         string            `yaml:"export_status" json:"exportStatus"`
 	BackedUpAt           string            `yaml:"backed_up_at" json:"backedUpAt"`
 	SourceMoodleMetadata map[string]string `yaml:"source_moodle_metadata" json:"sourceMoodleMetadata"`
 }
