@@ -37,6 +37,10 @@
       "destination": "/api/auth_qr_exchange?clerk=1"
     },
     {
+      "source": "/api/auth/clerk/session",
+      "destination": "/api/auth_qr_exchange?clerk=session"
+    },
+    {
       "source": "/api/auth/clerk/mobile/bridge/start",
       "destination": "/api/auth_qr_exchange?bridge=start"
     },
