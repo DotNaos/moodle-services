@@ -33,6 +33,8 @@ type (
 	CreateOAuthAuthorizationCodeInput = store.CreateOAuthAuthorizationCodeInput
 	CreateOAuthClientInput            = store.CreateOAuthClientInput
 	CreateOAuthTokenInput             = store.CreateOAuthTokenInput
+	CreateMobileBridgeRequestInput    = store.CreateMobileBridgeRequestInput
+	MobileBridgeRequest               = store.MobileBridgeRequest
 	Service                           = moodleservice.Service
 	Store                             = store.Store
 	UpsertMoodleAccountInput          = store.UpsertMoodleAccountInput

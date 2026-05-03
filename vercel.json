@@ -37,6 +37,18 @@
       "destination": "/api/auth_qr_exchange?clerk=1"
     },
     {
+      "source": "/api/auth/clerk/mobile/bridge/start",
+      "destination": "/api/auth_qr_exchange?bridge=start"
+    },
+    {
+      "source": "/api/auth/clerk/mobile/bridge/status",
+      "destination": "/api/auth_qr_exchange?bridge=status"
+    },
+    {
+      "source": "/api/auth/clerk/mobile/bridge/complete",
+      "destination": "/api/auth_qr_exchange?bridge=complete"
+    },
+    {
       "source": "/api/courses/:courseId/materials/:resourceId/text",
       "destination": "/api/material_text?courseId=:courseId&resourceId=:resourceId"
     },
