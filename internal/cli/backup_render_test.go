@@ -46,3 +46,12 @@ func TestResetBackupTextDirRemovesStaleFiles(t *testing.T) {
 		t.Fatalf("expected stale text directory to be removed, got %v", err)
 	}
 }
+
+func TestSanitizeBackupTextRemovesUnreadableControls(t *testing.T) {
+	input := "alpha\x00 beta\x02\nkeep\tspacing"
+
+	got := sanitizeBackupText(input)
+	if got != "alpha  beta \nkeep\tspacing" {
+		t.Fatalf("unexpected sanitized text: %q", got)
+	}
+}
