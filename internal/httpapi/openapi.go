@@ -50,16 +50,18 @@ func schemas() map[string]any {
 		"CreateAPIKeyRequest": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"name":   map[string]any{"type": "string"},
-				"scopes": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"name":           map[string]any{"type": "string"},
+				"scopes":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"revokeExisting": map[string]any{"type": "boolean"},
 			},
 		},
 		"CreateAPIKeyResponse": map[string]any{
 			"type":     "object",
 			"required": []string{"apiKey", "apiKeyRecord"},
 			"properties": map[string]any{
-				"apiKey":       map[string]any{"type": "string"},
-				"apiKeyRecord": map[string]any{"$ref": "#/components/schemas/APIKey"},
+				"apiKey":          map[string]any{"type": "string"},
+				"apiKeyRecord":    map[string]any{"$ref": "#/components/schemas/APIKey"},
+				"revokedExisting": map[string]any{"type": "boolean"},
 			},
 		},
 		"User": map[string]any{

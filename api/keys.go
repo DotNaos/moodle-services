@@ -32,8 +32,9 @@ func Keys(w http.ResponseWriter, r *http.Request) {
 		svc.WriteJSON(w, http.StatusOK, map[string]any{"keys": records})
 	case http.MethodPost:
 		var input struct {
-			Name   string   `json:"name"`
-			Scopes []string `json:"scopes"`
+			Name           string   `json:"name"`
+			Scopes         []string `json:"scopes"`
+			RevokeExisting bool     `json:"revokeExisting"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&input)
 		if strings.TrimSpace(input.Name) == "" {
@@ -47,12 +48,18 @@ func Keys(w http.ResponseWriter, r *http.Request) {
 			svc.WriteError(w, err)
 			return
 		}
+		if input.RevokeExisting {
+			if err := st.RevokeActiveAPIKeysForUser(r.Context(), user.ID); err != nil {
+				svc.WriteError(w, err)
+				return
+			}
+		}
 		record, err := st.CreateAPIKey(r.Context(), user.ID, input.Name, apiKey, cfg.HashSecret, input.Scopes)
 		if err != nil {
 			svc.WriteError(w, err)
 			return
 		}
-		svc.WriteJSON(w, http.StatusOK, map[string]any{"apiKey": apiKey, "apiKeyRecord": record})
+		svc.WriteJSON(w, http.StatusOK, map[string]any{"apiKey": apiKey, "apiKeyRecord": record, "revokedExisting": input.RevokeExisting})
 	case http.MethodDelete:
 		keyID := strings.TrimSpace(r.URL.Query().Get("id"))
 		if keyID == "" {
