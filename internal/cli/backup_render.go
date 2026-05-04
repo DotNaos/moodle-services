@@ -322,7 +322,7 @@ func sanitizeBackupText(input string) string {
 
 func renderBackupReport(run backupRunContext, status string, manifests []backupCourseManifest, failures []string) string {
 	lines := []string{
-		"# Moodle FHGR Backup Report: " + run.Semester,
+		"# FHGR Moodle Export Report: " + run.Semester,
 		"",
 		"- Run: `" + run.RunID + "`",
 		"- Status: `" + status + "`",

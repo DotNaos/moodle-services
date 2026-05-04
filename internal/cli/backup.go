@@ -142,15 +142,15 @@ func backupSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 	if err != nil {
 		return backupSemesterResult{}, err
 	}
-	runFolder, err := uploader.CreateRunFolder(ctx, []string{semester, run.RunID})
+	runFolder, err := uploader.CreateRunFolder(ctx, []string{semester, "runs", run.RunID})
 	if err != nil {
 		return backupSemesterResult{}, err
 	}
-	rawFolder, err := uploader.EnsureFolderPath(ctx, []string{semester, run.RunID, "raw"})
+	rawFolder, err := uploader.EnsureFolderPath(ctx, []string{semester, "runs", run.RunID, "raw-zips"})
 	if err != nil {
 		return backupSemesterResult{}, err
 	}
-	processedFolder, err := uploader.EnsureFolderPath(ctx, []string{semester, run.RunID, "processed"})
+	processedFolder, err := uploader.EnsureFolderPath(ctx, []string{semester, "runs", run.RunID, "processed"})
 	if err != nil {
 		return backupSemesterResult{}, err
 	}
@@ -166,13 +166,15 @@ func backupSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 	}
 	defer os.RemoveAll(tempDir)
 
+	allRecords := make([]exportMaterialRecord, 0)
 	for _, course := range courses {
-		manifest, err := backupCourseRun(ctx, client, run, course, rawFolder, runFolder, uploader, tempDir)
+		manifest, records, err := backupCourseRun(ctx, client, run, course, rawFolder, runFolder, uploader, tempDir)
 		if err != nil {
 			failures = append(failures, course.Slug+": "+err.Error())
 			continue
 		}
 		manifests = append(manifests, manifest)
+		allRecords = append(allRecords, records...)
 	}
 	status := backupStatusComplete
 	if len(failures) > 0 {
@@ -200,6 +202,9 @@ func backupSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 	if err := uploadProcessedBackupFiles(ctx, uploader, processedFolder.ID, courses); err != nil {
 		return backupSemesterResult{}, err
 	}
+	if err := uploadExportNavigation(ctx, uploader, run, courses, allRecords); err != nil {
+		return backupSemesterResult{}, err
+	}
 	if status == backupStatusComplete {
 		latest, err := yamlString(backupLatestYAML{Semester: semester, LatestRun: run.RunID, Status: status, UpdatedAt: isoUTC(completedAt)})
 		if err != nil {
@@ -213,37 +218,41 @@ func backupSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 	return backupSemesterResult{Semester: semester, RunID: run.RunID, Status: status, Courses: len(manifests), Failures: failures}, nil
 }
 
-func backupCourseRun(ctx context.Context, client *moodle.Client, run backupRunContext, course backupCourse, rawFolder backupDriveFile, runFolder backupDriveFile, uploader backupDriveUploader, tempDir string) (backupCourseManifest, error) {
+func backupCourseRun(ctx context.Context, client *moodle.Client, run backupRunContext, course backupCourse, rawFolder backupDriveFile, runFolder backupDriveFile, uploader backupDriveUploader, tempDir string) (backupCourseManifest, []exportMaterialRecord, error) {
 	if err := ensureBackupCourseFiles(course); err != nil {
-		return backupCourseManifest{}, err
+		return backupCourseManifest{}, nil, err
 	}
 	courseID := fmt.Sprintf("%d", course.ID)
 	resources, _, err := client.FetchCourseResources(courseID)
 	if err != nil {
-		return backupCourseManifest{}, err
+		return backupCourseManifest{}, nil, err
 	}
 	readerText, err := client.FetchCoursePageReader(courseID)
 	if err != nil {
-		return backupCourseManifest{}, err
+		return backupCourseManifest{}, nil, err
 	}
 	if err := writeBackupCourseSnapshot(course, readerText, resources); err != nil {
-		return backupCourseManifest{}, err
+		return backupCourseManifest{}, nil, err
 	}
 	zipPath := filepath.Join(tempDir, course.Slug+".zip")
 	if _, err := exportCourseZip(client, resources, zipPath); err != nil {
-		return backupCourseManifest{}, err
+		return backupCourseManifest{}, nil, err
 	}
 	sha, err := sha256File(zipPath)
 	if err != nil {
-		return backupCourseManifest{}, err
+		return backupCourseManifest{}, nil, err
 	}
-	rawUpload, err := uploader.UploadFile(ctx, zipPath, rawFolder.ID, filepath.Base(zipPath))
+	rawUpload, err := uploader.UploadFile(ctx, zipPath, rawFolder.ID, filepath.Base(zipPath), false)
 	if err != nil {
-		return backupCourseManifest{}, err
+		return backupCourseManifest{}, nil, err
 	}
 	textResults := extractBackupResourceTexts(client, course, resources)
+	records, err := exportCourseDriveArtifacts(ctx, client, uploader, run, course, resources, textResults, tempDir)
+	if err != nil {
+		return backupCourseManifest{}, nil, err
+	}
 	if _, err := writeBackupMaterialIndex(course, run, zipPath, sha, rawUpload, resources, textResults); err != nil {
-		return backupCourseManifest{}, err
+		return backupCourseManifest{}, nil, err
 	}
 	return backupCourseManifest{
 		Semester:            run.Semester,
@@ -264,7 +273,7 @@ func backupCourseRun(ctx context.Context, client *moodle.Client, run backupRunCo
 			"category":  course.Category,
 			"view_url":  course.ViewURL,
 		},
-	}, nil
+	}, records, nil
 }
 
 func uploadProcessedBackupFiles(ctx context.Context, uploader backupDriveUploader, folderID string, courses []backupCourse) error {
@@ -272,7 +281,7 @@ func uploadProcessedBackupFiles(ctx context.Context, uploader backupDriveUploade
 		for _, name := range []string{"MOODLE.md", "moodle-course.yaml", "materials.index.yaml"} {
 			path := filepath.Join(course.Dir, name)
 			if _, err := os.Stat(path); err == nil {
-				if _, err := uploader.UploadFile(ctx, path, folderID, driveUploadName(course.Slug, path)); err != nil {
+				if _, err := uploader.UploadFile(ctx, path, folderID, driveUploadName(course.Slug, path), false); err != nil {
 					return err
 				}
 			}
@@ -295,7 +304,7 @@ func uploadProcessedBackupFiles(ctx context.Context, uploader backupDriveUploade
 			} else if !ok {
 				continue
 			}
-			if _, err := uploader.UploadFile(ctx, path, folderID, course.Slug+"--materials-text--"+entry.Name()); err != nil {
+			if _, err := uploader.UploadFile(ctx, path, folderID, course.Slug+"--materials-text--"+entry.Name(), false); err != nil {
 				return err
 			}
 		}

@@ -15,6 +15,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -35,7 +36,7 @@ type backupDriveFile struct {
 type backupDriveUploader interface {
 	EnsureFolderPath(ctx context.Context, parts []string) (backupDriveFile, error)
 	CreateRunFolder(ctx context.Context, parts []string) (backupDriveFile, error)
-	UploadFile(ctx context.Context, path string, folderID string, name string) (backupDriveFile, error)
+	UploadFile(ctx context.Context, path string, folderID string, name string, overwrite bool) (backupDriveFile, error)
 	UploadText(ctx context.Context, text string, folderID string, name string, overwrite bool) (backupDriveFile, error)
 }
 
@@ -70,7 +71,7 @@ func (u *dryRunBackupDriveUploader) CreateRunFolder(ctx context.Context, parts [
 	return u.record(u.drivePath(parts)), nil
 }
 
-func (u *dryRunBackupDriveUploader) UploadFile(ctx context.Context, path string, folderID string, name string) (backupDriveFile, error) {
+func (u *dryRunBackupDriveUploader) UploadFile(ctx context.Context, path string, folderID string, name string, overwrite bool) (backupDriveFile, error) {
 	if name == "" {
 		name = filepath.Base(path)
 	}
@@ -309,7 +310,7 @@ func (u *googleBackupDriveUploader) ensureFolder(ctx context.Context, parentID s
 	return u.createFolder(ctx, name, parentID)
 }
 
-func (u *googleBackupDriveUploader) UploadFile(ctx context.Context, path string, folderID string, name string) (backupDriveFile, error) {
+func (u *googleBackupDriveUploader) UploadFile(ctx context.Context, path string, folderID string, name string, overwrite bool) (backupDriveFile, error) {
 	if name == "" {
 		name = filepath.Base(path)
 	}
@@ -317,7 +318,17 @@ func (u *googleBackupDriveUploader) UploadFile(ctx context.Context, path string,
 	if err != nil {
 		return backupDriveFile{}, err
 	}
-	return u.createMultipartFile(ctx, name, folderID, "application/octet-stream", data)
+	contentType := contentTypeForPath(path)
+	if overwrite {
+		existing, err := u.findChild(ctx, folderID, name, "")
+		if err != nil {
+			return backupDriveFile{}, err
+		}
+		if existing.ID != "" {
+			return u.updateMedia(ctx, existing.ID, contentType, data)
+		}
+	}
+	return u.createMultipartFile(ctx, name, folderID, contentType, data)
 }
 
 func (u *googleBackupDriveUploader) UploadText(ctx context.Context, text string, folderID string, name string, overwrite bool) (backupDriveFile, error) {
@@ -473,4 +484,29 @@ func driveUploadName(courseSlug string, path string) string {
 		return name
 	}
 	return courseSlug + "--" + name
+}
+
+func contentTypeForPath(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md":
+		return "text/markdown"
+	case ".yaml", ".yml":
+		return "application/x-yaml"
+	case ".json":
+		return "application/json"
+	case ".jsonl":
+		return "application/x-ndjson"
+	case ".pdf":
+		return "application/pdf"
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".zip":
+		return "application/zip"
+	}
+	if detected := mime.TypeByExtension(filepath.Ext(path)); detected != "" {
+		return detected
+	}
+	return "application/octet-stream"
 }
