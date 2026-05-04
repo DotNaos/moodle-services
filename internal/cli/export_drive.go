@@ -27,69 +27,69 @@ import (
 
 const driveFolderMimeType = "application/vnd.google-apps.folder"
 
-type backupDriveFile struct {
+type exportDriveFile struct {
 	ID          string `yaml:"id" json:"id"`
 	WebViewLink string `yaml:"web_view_link" json:"webViewLink"`
 	Name        string `yaml:"name,omitempty" json:"name,omitempty"`
 }
 
-type backupDriveUploader interface {
-	EnsureFolderPath(ctx context.Context, parts []string) (backupDriveFile, error)
-	CreateRunFolder(ctx context.Context, parts []string) (backupDriveFile, error)
-	UploadFile(ctx context.Context, path string, folderID string, name string, overwrite bool) (backupDriveFile, error)
-	UploadText(ctx context.Context, text string, folderID string, name string, overwrite bool) (backupDriveFile, error)
+type exportDriveUploader interface {
+	EnsureFolderPath(ctx context.Context, parts []string) (exportDriveFile, error)
+	CreateRunFolder(ctx context.Context, parts []string) (exportDriveFile, error)
+	UploadFile(ctx context.Context, path string, folderID string, name string, overwrite bool) (exportDriveFile, error)
+	UploadText(ctx context.Context, text string, folderID string, name string, overwrite bool) (exportDriveFile, error)
 }
 
-type dryRunBackupDriveUploader struct {
-	ids          map[string]backupDriveFile
+type dryRunExportDriveUploader struct {
+	ids          map[string]exportDriveFile
 	rootFolderID string
 }
 
-func newDryRunBackupDriveUploader() *dryRunBackupDriveUploader {
-	uploader := &dryRunBackupDriveUploader{ids: map[string]backupDriveFile{}}
-	root := uploader.record(backupDriveRootName)
+func newDryRunExportDriveUploader() *dryRunExportDriveUploader {
+	uploader := &dryRunExportDriveUploader{ids: map[string]exportDriveFile{}}
+	root := uploader.record(exportDriveRootName)
 	uploader.rootFolderID = root.ID
 	return uploader
 }
 
-func (u *dryRunBackupDriveUploader) record(key string) backupDriveFile {
+func (u *dryRunExportDriveUploader) record(key string) exportDriveFile {
 	if file, ok := u.ids[key]; ok {
 		return file
 	}
 	sum := sha1.Sum([]byte(key))
 	id := "dryrun-" + hex.EncodeToString(sum[:])[:16]
-	file := backupDriveFile{ID: id, WebViewLink: "dry-run://" + id, Name: filepath.Base(key)}
+	file := exportDriveFile{ID: id, WebViewLink: "dry-run://" + id, Name: filepath.Base(key)}
 	u.ids[key] = file
 	return file
 }
 
-func (u *dryRunBackupDriveUploader) EnsureFolderPath(ctx context.Context, parts []string) (backupDriveFile, error) {
+func (u *dryRunExportDriveUploader) EnsureFolderPath(ctx context.Context, parts []string) (exportDriveFile, error) {
 	return u.record(u.drivePath(parts)), nil
 }
 
-func (u *dryRunBackupDriveUploader) CreateRunFolder(ctx context.Context, parts []string) (backupDriveFile, error) {
+func (u *dryRunExportDriveUploader) CreateRunFolder(ctx context.Context, parts []string) (exportDriveFile, error) {
 	return u.record(u.drivePath(parts)), nil
 }
 
-func (u *dryRunBackupDriveUploader) UploadFile(ctx context.Context, path string, folderID string, name string, overwrite bool) (backupDriveFile, error) {
+func (u *dryRunExportDriveUploader) UploadFile(ctx context.Context, path string, folderID string, name string, overwrite bool) (exportDriveFile, error) {
 	if name == "" {
 		name = filepath.Base(path)
 	}
 	return u.record(folderID + "/" + name), nil
 }
 
-func (u *dryRunBackupDriveUploader) UploadText(ctx context.Context, text string, folderID string, name string, overwrite bool) (backupDriveFile, error) {
+func (u *dryRunExportDriveUploader) UploadText(ctx context.Context, text string, folderID string, name string, overwrite bool) (exportDriveFile, error) {
 	return u.record(folderID + "/" + name), nil
 }
 
-func (u *dryRunBackupDriveUploader) drivePath(parts []string) string {
+func (u *dryRunExportDriveUploader) drivePath(parts []string) string {
 	if len(parts) == 0 {
-		return backupDriveRootName
+		return exportDriveRootName
 	}
-	return backupDriveRootName + "/" + strings.Join(parts, "/")
+	return exportDriveRootName + "/" + strings.Join(parts, "/")
 }
 
-type googleBackupDriveUploader struct {
+type googleExportDriveUploader struct {
 	httpClient   *http.Client
 	accessToken  string
 	rootFolderID string
@@ -109,18 +109,18 @@ type googleAuthorizedUser struct {
 	TokenURI     string `json:"token_uri"`
 }
 
-func newGoogleBackupDriveUploader(ctx context.Context) (*googleBackupDriveUploader, error) {
+func newGoogleExportDriveUploader(ctx context.Context) (*googleExportDriveUploader, error) {
 	token, err := googleDriveAccessToken(ctx)
 	if err != nil {
 		return nil, err
 	}
-	uploader := &googleBackupDriveUploader{
+	uploader := &googleExportDriveUploader{
 		httpClient:   &http.Client{Timeout: 5 * time.Minute},
 		accessToken:  token,
 		rootFolderID: strings.TrimSpace(os.Getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID")),
 	}
 	if uploader.rootFolderID == "" {
-		root, err := uploader.ensureFolder(ctx, "", backupDriveRootName)
+		root, err := uploader.ensureFolder(ctx, "", exportDriveRootName)
 		if err != nil {
 			return nil, err
 		}
@@ -264,45 +264,45 @@ func parseServiceAccountPrivateKey(raw string) (*rsa.PrivateKey, error) {
 	return rsaKey, nil
 }
 
-func (u *googleBackupDriveUploader) EnsureFolderPath(ctx context.Context, parts []string) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) EnsureFolderPath(ctx context.Context, parts []string) (exportDriveFile, error) {
 	parentID := u.rootFolderID
-	var current backupDriveFile
+	var current exportDriveFile
 	if len(parts) == 0 {
 		return u.getFile(ctx, parentID)
 	}
 	for _, part := range parts {
 		found, err := u.ensureFolder(ctx, parentID, part)
 		if err != nil {
-			return backupDriveFile{}, err
+			return exportDriveFile{}, err
 		}
 		current = found
 		parentID = found.ID
 	}
 	if current.ID == "" {
-		return backupDriveFile{}, fmt.Errorf("empty Google Drive folder path")
+		return exportDriveFile{}, fmt.Errorf("empty Google Drive folder path")
 	}
 	return current, nil
 }
 
-func (u *googleBackupDriveUploader) CreateRunFolder(ctx context.Context, parts []string) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) CreateRunFolder(ctx context.Context, parts []string) (exportDriveFile, error) {
 	parent, err := u.EnsureFolderPath(ctx, parts[:len(parts)-1])
 	if err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	existing, err := u.findChild(ctx, parent.ID, parts[len(parts)-1], driveFolderMimeType)
 	if err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	if existing.ID != "" {
-		return backupDriveFile{}, fmt.Errorf("Google Drive run folder already exists: %s", strings.Join(parts, "/"))
+		return exportDriveFile{}, fmt.Errorf("Google Drive run folder already exists: %s", strings.Join(parts, "/"))
 	}
 	return u.createFolder(ctx, parts[len(parts)-1], parent.ID)
 }
 
-func (u *googleBackupDriveUploader) ensureFolder(ctx context.Context, parentID string, name string) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) ensureFolder(ctx context.Context, parentID string, name string) (exportDriveFile, error) {
 	found, err := u.findChild(ctx, parentID, name, driveFolderMimeType)
 	if err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	if found.ID != "" {
 		return found, nil
@@ -310,19 +310,19 @@ func (u *googleBackupDriveUploader) ensureFolder(ctx context.Context, parentID s
 	return u.createFolder(ctx, name, parentID)
 }
 
-func (u *googleBackupDriveUploader) UploadFile(ctx context.Context, path string, folderID string, name string, overwrite bool) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) UploadFile(ctx context.Context, path string, folderID string, name string, overwrite bool) (exportDriveFile, error) {
 	if name == "" {
 		name = filepath.Base(path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	contentType := contentTypeForPath(path)
 	if overwrite {
 		existing, err := u.findChild(ctx, folderID, name, "")
 		if err != nil {
-			return backupDriveFile{}, err
+			return exportDriveFile{}, err
 		}
 		if existing.ID != "" {
 			return u.updateMedia(ctx, existing.ID, contentType, data)
@@ -331,11 +331,11 @@ func (u *googleBackupDriveUploader) UploadFile(ctx context.Context, path string,
 	return u.createMultipartFile(ctx, name, folderID, contentType, data)
 }
 
-func (u *googleBackupDriveUploader) UploadText(ctx context.Context, text string, folderID string, name string, overwrite bool) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) UploadText(ctx context.Context, text string, folderID string, name string, overwrite bool) (exportDriveFile, error) {
 	if overwrite {
 		existing, err := u.findChild(ctx, folderID, name, "")
 		if err != nil {
-			return backupDriveFile{}, err
+			return exportDriveFile{}, err
 		}
 		if existing.ID != "" {
 			return u.updateMedia(ctx, existing.ID, "text/plain", []byte(text))
@@ -344,7 +344,7 @@ func (u *googleBackupDriveUploader) UploadText(ctx context.Context, text string,
 	return u.createMultipartFile(ctx, name, folderID, "text/plain", []byte(text))
 }
 
-func (u *googleBackupDriveUploader) findChild(ctx context.Context, parentID string, name string, mimeType string) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) findChild(ctx context.Context, parentID string, name string, mimeType string) (exportDriveFile, error) {
 	clauses := []string{
 		fmt.Sprintf("name = '%s'", strings.ReplaceAll(name, "'", "\\'")),
 		"trashed = false",
@@ -363,32 +363,32 @@ func (u *googleBackupDriveUploader) findChild(ctx context.Context, parentID stri
 	values.Set("includeItemsFromAllDrives", "true")
 	values.Set("supportsAllDrives", "true")
 	var payload struct {
-		Files []backupDriveFile `json:"files"`
+		Files []exportDriveFile `json:"files"`
 	}
 	if err := u.driveJSON(ctx, http.MethodGet, "https://www.googleapis.com/drive/v3/files?"+values.Encode(), nil, "application/json", &payload); err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	if len(payload.Files) == 0 {
-		return backupDriveFile{}, nil
+		return exportDriveFile{}, nil
 	}
 	return payload.Files[0], nil
 }
 
-func (u *googleBackupDriveUploader) getFile(ctx context.Context, fileID string) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) getFile(ctx context.Context, fileID string) (exportDriveFile, error) {
 	if strings.TrimSpace(fileID) == "" {
-		return backupDriveFile{}, fmt.Errorf("Google Drive root folder ID is empty")
+		return exportDriveFile{}, fmt.Errorf("Google Drive root folder ID is empty")
 	}
 	values := url.Values{}
 	values.Set("fields", "id,name,webViewLink")
 	values.Set("supportsAllDrives", "true")
-	var file backupDriveFile
+	var file exportDriveFile
 	if err := u.driveJSON(ctx, http.MethodGet, "https://www.googleapis.com/drive/v3/files/"+url.PathEscape(fileID)+"?"+values.Encode(), nil, "application/json", &file); err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	return file, nil
 }
 
-func (u *googleBackupDriveUploader) createFolder(ctx context.Context, name string, parentID string) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) createFolder(ctx context.Context, name string, parentID string) (exportDriveFile, error) {
 	metadata := map[string]any{"name": name, "mimeType": driveFolderMimeType}
 	if parentID != "" {
 		metadata["parents"] = []string{parentID}
@@ -396,7 +396,7 @@ func (u *googleBackupDriveUploader) createFolder(ctx context.Context, name strin
 	values := url.Values{}
 	values.Set("fields", "id,name,webViewLink")
 	values.Set("supportsAllDrives", "true")
-	var file backupDriveFile
+	var file exportDriveFile
 	err := u.driveJSON(ctx, http.MethodPost, "https://www.googleapis.com/drive/v3/files?"+values.Encode(), metadata, "application/json", &file)
 	if err != nil && isGoogleDriveResponseRecoveryError(err) {
 		if found, findErr := u.findChildAfterDriveRecovery(ctx, parentID, name, driveFolderMimeType); findErr == nil && found.ID != "" {
@@ -406,33 +406,33 @@ func (u *googleBackupDriveUploader) createFolder(ctx context.Context, name strin
 	return file, err
 }
 
-func (u *googleBackupDriveUploader) createMultipartFile(ctx context.Context, name string, folderID string, contentType string, data []byte) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) createMultipartFile(ctx context.Context, name string, folderID string, contentType string, data []byte) (exportDriveFile, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	metadata := map[string]any{"name": name, "parents": []string{folderID}}
 	metaPart, err := writer.CreatePart(map[string][]string{"Content-Type": {"application/json; charset=UTF-8"}})
 	if err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	metaJSON, _ := json.Marshal(metadata)
 	if _, err := metaPart.Write(metaJSON); err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	filePart, err := writer.CreatePart(map[string][]string{"Content-Type": {contentType}})
 	if err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	if _, err := filePart.Write(data); err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	if err := writer.Close(); err != nil {
-		return backupDriveFile{}, err
+		return exportDriveFile{}, err
 	}
 	values := url.Values{}
 	values.Set("uploadType", "multipart")
 	values.Set("fields", "id,name,webViewLink")
 	values.Set("supportsAllDrives", "true")
-	var file backupDriveFile
+	var file exportDriveFile
 	err = u.driveJSON(ctx, http.MethodPost, "https://www.googleapis.com/upload/drive/v3/files?"+values.Encode(), body.Bytes(), writer.FormDataContentType(), &file)
 	if err != nil && isGoogleDriveResponseRecoveryError(err) {
 		if found, findErr := u.findChildAfterDriveRecovery(ctx, folderID, name, ""); findErr == nil && found.ID != "" {
@@ -442,12 +442,12 @@ func (u *googleBackupDriveUploader) createMultipartFile(ctx context.Context, nam
 	return file, err
 }
 
-func (u *googleBackupDriveUploader) updateMedia(ctx context.Context, fileID string, contentType string, data []byte) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) updateMedia(ctx context.Context, fileID string, contentType string, data []byte) (exportDriveFile, error) {
 	values := url.Values{}
 	values.Set("uploadType", "media")
 	values.Set("fields", "id,name,webViewLink")
 	values.Set("supportsAllDrives", "true")
-	var file backupDriveFile
+	var file exportDriveFile
 	err := u.driveJSON(ctx, http.MethodPatch, "https://www.googleapis.com/upload/drive/v3/files/"+url.PathEscape(fileID)+"?"+values.Encode(), data, contentType, &file)
 	if err != nil && isGoogleDriveResponseRecoveryError(err) {
 		if found, findErr := u.getFile(ctx, fileID); findErr == nil && found.ID != "" {
@@ -466,7 +466,7 @@ func isGoogleDriveResponseRecoveryError(err error) bool {
 		strings.Contains(text, "error preparing the response")
 }
 
-func (u *googleBackupDriveUploader) findChildAfterDriveRecovery(ctx context.Context, parentID string, name string, mimeType string) (backupDriveFile, error) {
+func (u *googleExportDriveUploader) findChildAfterDriveRecovery(ctx context.Context, parentID string, name string, mimeType string) (exportDriveFile, error) {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
@@ -479,12 +479,12 @@ func (u *googleBackupDriveUploader) findChildAfterDriveRecovery(ctx context.Cont
 		lastErr = err
 	}
 	if lastErr != nil {
-		return backupDriveFile{}, lastErr
+		return exportDriveFile{}, lastErr
 	}
-	return backupDriveFile{}, nil
+	return exportDriveFile{}, nil
 }
 
-func (u *googleBackupDriveUploader) driveJSON(ctx context.Context, method string, endpoint string, input any, contentType string, output any) error {
+func (u *googleExportDriveUploader) driveJSON(ctx context.Context, method string, endpoint string, input any, contentType string, output any) error {
 	var bodyBytes []byte
 	switch value := input.(type) {
 	case nil:

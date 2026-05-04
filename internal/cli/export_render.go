@@ -18,7 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type backupCourseManifest struct {
+type exportCourseManifest struct {
 	Semester             string            `yaml:"semester" json:"semester"`
 	CourseID             string            `yaml:"course_id" json:"courseId"`
 	CourseSlug           string            `yaml:"course_slug" json:"courseSlug"`
@@ -29,12 +29,12 @@ type backupCourseManifest struct {
 	GoogleDriveLink      string            `yaml:"google_drive_link" json:"googleDriveLink"`
 	RawZipFilename       string            `yaml:"raw_zip_filename" json:"rawZipFilename"`
 	SHA256               string            `yaml:"sha256" json:"sha256"`
-	BackupStatus         string            `yaml:"export_status" json:"exportStatus"`
+	ExportStatus         string            `yaml:"export_status" json:"exportStatus"`
 	BackedUpAt           string            `yaml:"backed_up_at" json:"backedUpAt"`
 	SourceMoodleMetadata map[string]string `yaml:"source_moodle_metadata" json:"sourceMoodleMetadata"`
 }
 
-type backupMaterialIndex struct {
+type exportMaterialIndex struct {
 	Semester             string                 `yaml:"semester"`
 	CourseID             string                 `yaml:"course_id"`
 	CourseSlug           string                 `yaml:"course_slug"`
@@ -44,28 +44,28 @@ type backupMaterialIndex struct {
 	RawZipSHA256         string                 `yaml:"raw_zip_sha256"`
 	RawGoogleDriveFileID string                 `yaml:"raw_google_drive_file_id"`
 	RawGoogleDriveLink   string                 `yaml:"raw_google_drive_link"`
-	Materials            []backupZipEntry       `yaml:"materials"`
+	Materials            []exportZipEntry       `yaml:"materials"`
 	MoodleResources      []moodle.Resource      `yaml:"moodle_resources"`
-	TextExtraction       []backupTextExtraction `yaml:"text_extraction"`
+	TextExtraction       []exportTextExtraction `yaml:"text_extraction"`
 }
 
-type backupZipEntry struct {
+type exportZipEntry struct {
 	Path           string `yaml:"path"`
 	CompressedSize uint64 `yaml:"compressed_size"`
 	Size           uint64 `yaml:"size"`
 	CRC            string `yaml:"crc"`
 }
 
-type backupTextExtraction struct {
+type exportTextExtraction struct {
 	ResourceID string `yaml:"resource_id"`
 	Status     string `yaml:"status"`
 	Path       string `yaml:"path,omitempty"`
 	Error      string `yaml:"error,omitempty"`
 }
 
-var errBackupUnsupportedTextResource = errors.New("unsupported non-text resource")
+var errExportUnsupportedTextResource = errors.New("unsupported non-text resource")
 
-type backupRunYAML struct {
+type exportRunYAML struct {
 	Semester         string `yaml:"semester"`
 	Run              string `yaml:"run"`
 	GitHubRunID      string `yaml:"github_run_id"`
@@ -75,14 +75,14 @@ type backupRunYAML struct {
 	CompletedAt      string `yaml:"completed_at"`
 }
 
-type backupLatestYAML struct {
+type exportLatestYAML struct {
 	Semester  string `yaml:"semester"`
 	LatestRun string `yaml:"latest_run"`
 	Status    string `yaml:"status"`
 	UpdatedAt string `yaml:"updated_at"`
 }
 
-func ensureBackupCourseFiles(course backupCourse) error {
+func ensureExportCourseFiles(course exportCourse) error {
 	if err := os.MkdirAll(course.Dir, 0o755); err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func ensureBackupCourseFiles(course backupCourse) error {
 	return nil
 }
 
-func writeBackupCourseSnapshot(course backupCourse, readerText string, resources []moodle.Resource) error {
+func writeExportCourseSnapshot(course exportCourse, readerText string, resources []moodle.Resource) error {
 	if strings.TrimSpace(readerText) == "" {
 		readerText = "No readable course content found."
 	}
@@ -129,12 +129,12 @@ func writeBackupCourseSnapshot(course backupCourse, readerText string, resources
 	return os.WriteFile(filepath.Join(course.Dir, "moodle-course.yaml"), data, 0o644)
 }
 
-func writeBackupMaterialIndex(course backupCourse, run backupRunContext, zipPath string, zipSHA string, upload backupDriveFile, resources []moodle.Resource, textResults []backupTextExtraction) (backupMaterialIndex, error) {
-	entries, err := readBackupZipEntries(zipPath)
+func writeExportMaterialIndex(course exportCourse, run exportRunContext, zipPath string, zipSHA string, upload exportDriveFile, resources []moodle.Resource, textResults []exportTextExtraction) (exportMaterialIndex, error) {
+	entries, err := readExportZipEntries(zipPath)
 	if err != nil {
-		return backupMaterialIndex{}, err
+		return exportMaterialIndex{}, err
 	}
-	index := backupMaterialIndex{
+	index := exportMaterialIndex{
 		Semester:             run.Semester,
 		CourseID:             fmt.Sprintf("%d", course.ID),
 		CourseSlug:           course.Slug,
@@ -150,23 +150,23 @@ func writeBackupMaterialIndex(course backupCourse, run backupRunContext, zipPath
 	}
 	data, err := yaml.Marshal(index)
 	if err != nil {
-		return backupMaterialIndex{}, err
+		return exportMaterialIndex{}, err
 	}
 	return index, os.WriteFile(filepath.Join(course.Dir, "materials.index.yaml"), data, 0o644)
 }
 
-func readBackupZipEntries(path string) ([]backupZipEntry, error) {
+func readExportZipEntries(path string) ([]exportZipEntry, error) {
 	reader, err := zip.OpenReader(path)
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
-	entries := make([]backupZipEntry, 0, len(reader.File))
+	entries := make([]exportZipEntry, 0, len(reader.File))
 	for _, file := range reader.File {
 		if file.FileInfo().IsDir() {
 			continue
 		}
-		entries = append(entries, backupZipEntry{
+		entries = append(entries, exportZipEntry{
 			Path:           file.Name,
 			CompressedSize: file.CompressedSize64,
 			Size:           file.UncompressedSize64,
@@ -186,51 +186,51 @@ func sha256File(path string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func extractBackupResourceTexts(client *moodle.Client, course backupCourse, resources []moodle.Resource) []backupTextExtraction {
-	results := make([]backupTextExtraction, 0)
+func extractExportResourceTexts(client *moodle.Client, course exportCourse, resources []moodle.Resource) []exportTextExtraction {
+	results := make([]exportTextExtraction, 0)
 	textDir := filepath.Join(course.Dir, "materials-text")
-	if err := resetBackupTextDir(textDir); err != nil {
-		return []backupTextExtraction{{Status: "failed", Error: err.Error()}}
+	if err := resetExportTextDir(textDir); err != nil {
+		return []exportTextExtraction{{Status: "failed", Error: err.Error()}}
 	}
 	for _, resource := range resources {
 		if resource.Type != "resource" || strings.TrimSpace(resource.ID) == "" {
 			continue
 		}
-		text, err := renderBackupResourceText(client, resource)
+		text, err := renderExportResourceText(client, resource)
 		if err != nil {
 			status := "failed"
-			if errors.Is(err, errBackupUnsupportedTextResource) {
+			if errors.Is(err, errExportUnsupportedTextResource) {
 				status = "skipped"
 			}
-			results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: status, Error: err.Error()})
+			results = append(results, exportTextExtraction{ResourceID: resource.ID, Status: status, Error: err.Error()})
 			continue
 		}
 		text = strings.TrimSpace(text)
 		if text == "" {
-			results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "empty"})
+			results = append(results, exportTextExtraction{ResourceID: resource.ID, Status: "empty"})
 			continue
 		}
 		if err := os.MkdirAll(textDir, 0o755); err != nil {
-			results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "failed", Error: err.Error()})
+			results = append(results, exportTextExtraction{ResourceID: resource.ID, Status: "failed", Error: err.Error()})
 			continue
 		}
-		filename := slugifyBackupName(resource.Name)
+		filename := slugifyExportName(resource.Name)
 		if filename == "" {
 			filename = "resource-" + resource.ID
 		}
 		path := filepath.Join(textDir, filename+".md")
 		content := "# " + resource.Name + "\n\n" + text + "\n"
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "failed", Error: err.Error()})
+			results = append(results, exportTextExtraction{ResourceID: resource.ID, Status: "failed", Error: err.Error()})
 			continue
 		}
 		rel, _ := filepath.Rel(course.Dir, path)
-		results = append(results, backupTextExtraction{ResourceID: resource.ID, Status: "ok", Path: filepath.ToSlash(rel)})
+		results = append(results, exportTextExtraction{ResourceID: resource.ID, Status: "ok", Path: filepath.ToSlash(rel)})
 	}
 	return results
 }
 
-func resetBackupTextDir(textDir string) error {
+func resetExportTextDir(textDir string) error {
 	if strings.TrimSpace(textDir) == "" || textDir == string(filepath.Separator) {
 		return fmt.Errorf("refusing to reset invalid materials text directory")
 	}
@@ -240,7 +240,7 @@ func resetBackupTextDir(textDir string) error {
 	return nil
 }
 
-func renderBackupResourceText(client *moodle.Client, resource moodle.Resource) (string, error) {
+func renderExportResourceText(client *moodle.Client, resource moodle.Resource) (string, error) {
 	result, err := client.DownloadFileToBuffer(resource.URL)
 	if err != nil {
 		return "", err
@@ -252,34 +252,34 @@ func renderBackupResourceText(client *moodle.Client, resource moodle.Resource) (
 		if err != nil {
 			return "", err
 		}
-		return sanitizeBackupText(cleanExtractedTextWithTimeout(text, 2*time.Second)), nil
+		return sanitizeExportText(cleanExtractedTextWithTimeout(text, 2*time.Second)), nil
 	}
-	if !isBackupPlainTextResource(fileType, contentType, result.Data) {
-		return "", fmt.Errorf("%w: %s (%s)", errBackupUnsupportedTextResource, resource.Name, result.ContentType)
+	if !isExportPlainTextResource(fileType, contentType, result.Data) {
+		return "", fmt.Errorf("%w: %s (%s)", errExportUnsupportedTextResource, resource.Name, result.ContentType)
 	}
-	return sanitizeBackupText(string(result.Data)), nil
+	return sanitizeExportText(string(result.Data)), nil
 }
 
-func isBackupPlainTextResource(fileType string, contentType string, data []byte) bool {
+func isExportPlainTextResource(fileType string, contentType string, data []byte) bool {
 	switch strings.TrimPrefix(strings.ToLower(fileType), ".") {
 	case "txt", "md", "markdown", "csv", "tsv", "log", "xml", "html", "htm", "json", "yaml", "yml":
-		return looksLikeBackupText(data)
+		return looksLikeExportText(data)
 	}
 	switch {
 	case strings.HasPrefix(contentType, "text/"):
-		return looksLikeBackupText(data)
+		return looksLikeExportText(data)
 	case contentType == "application/json",
 		contentType == "application/xml",
 		contentType == "application/yaml",
 		contentType == "application/x-yaml",
 		contentType == "application/xhtml+xml":
-		return looksLikeBackupText(data)
+		return looksLikeExportText(data)
 	default:
 		return false
 	}
 }
 
-func looksLikeBackupText(data []byte) bool {
+func looksLikeExportText(data []byte) bool {
 	if len(data) == 0 {
 		return true
 	}
@@ -311,7 +311,7 @@ func looksLikeBackupText(data []byte) bool {
 	return suspicious*100/total < 5
 }
 
-func sanitizeBackupText(input string) string {
+func sanitizeExportText(input string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
 			return ' '
@@ -320,7 +320,7 @@ func sanitizeBackupText(input string) string {
 	}, input)
 }
 
-func renderBackupReport(run backupRunContext, status string, manifests []backupCourseManifest, failures []string) string {
+func renderExportReport(run exportRunContext, status string, manifests []exportCourseManifest, failures []string) string {
 	lines := []string{
 		"# FHGR Moodle Export Report: " + run.Semester,
 		"",

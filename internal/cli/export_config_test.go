@@ -9,11 +9,11 @@ import (
 	"github.com/DotNaos/moodle-services/internal/moodle"
 )
 
-func TestBuildBackupRunContextUsesUTCAndGitHubRunID(t *testing.T) {
+func TestBuildExportRunContextUsesUTCAndGitHubRunID(t *testing.T) {
 	t.Setenv("GITHUB_RUN_ID", "123456789")
 	t.Setenv("GITHUB_RUN_ATTEMPT", "2")
 
-	ctx := buildBackupRunContext("/tmp/school", "FS26", time.Date(2026, 5, 3, 13, 42, 18, 0, time.UTC))
+	ctx := buildExportRunContext("/tmp/school", "FS26", time.Date(2026, 5, 3, 13, 42, 18, 0, time.UTC))
 
 	if ctx.RunID != "2026-05-03-134218-123456789" {
 		t.Fatalf("unexpected run id: %s", ctx.RunID)
@@ -27,9 +27,9 @@ func TestSemestersToProcessSkipsCompletedOldSemesters(t *testing.T) {
 	root := t.TempDir()
 	mustMkdir(t, filepath.Join(root, "FS26"))
 	mustMkdir(t, filepath.Join(root, "HS25"))
-	cfg := schoolBackupConfig{CurrentTerm: "FS26"}
-	index := backupIndex{Semesters: map[string]backupSemesterRef{
-		"HS25": {Status: backupStatusComplete},
+	cfg := schoolExportConfig{CurrentTerm: "FS26"}
+	index := exportIndex{Semesters: map[string]exportSemesterRef{
+		"HS25": {Status: exportStatusComplete},
 	}}
 
 	got, err := semestersToProcess(root, cfg, index, "")
@@ -45,8 +45,8 @@ func TestSemestersToProcessIncludesMissingOldSemesters(t *testing.T) {
 	root := t.TempDir()
 	mustMkdir(t, filepath.Join(root, "FS26"))
 	mustMkdir(t, filepath.Join(root, "HS25"))
-	cfg := schoolBackupConfig{CurrentTerm: "FS26"}
-	index := backupIndex{Semesters: map[string]backupSemesterRef{}}
+	cfg := schoolExportConfig{CurrentTerm: "FS26"}
+	index := exportIndex{Semesters: map[string]exportSemesterRef{}}
 
 	got, err := semestersToProcess(root, cfg, index, "")
 	if err != nil {
@@ -57,11 +57,11 @@ func TestSemestersToProcessIncludesMissingOldSemesters(t *testing.T) {
 	}
 }
 
-func TestBackupCourseSlugUsesSchoolOverrides(t *testing.T) {
-	cfg := schoolBackupConfig{}
+func TestExportCourseSlugUsesSchoolOverrides(t *testing.T) {
+	cfg := schoolExportConfig{}
 	cfg.Moodle.CourseSlugOverrides = map[string]string{"19489": "design-thinking"}
 
-	got := backupCourseSlug(testMoodleCourse(19489, "Design Thinking FS26", "DT FS26"), cfg)
+	got := exportCourseSlug(testMoodleCourse(19489, "Design Thinking FS26", "DT FS26"), cfg)
 	if got != "design-thinking" {
 		t.Fatalf("unexpected slug: %s", got)
 	}
