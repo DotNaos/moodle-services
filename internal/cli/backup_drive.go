@@ -443,39 +443,54 @@ func (u *googleBackupDriveUploader) updateMedia(ctx context.Context, fileID stri
 }
 
 func (u *googleBackupDriveUploader) driveJSON(ctx context.Context, method string, endpoint string, input any, contentType string, output any) error {
-	var body io.Reader
+	var bodyBytes []byte
 	switch value := input.(type) {
 	case nil:
 	case []byte:
-		body = bytes.NewReader(value)
+		bodyBytes = value
 	default:
 		data, err := json.Marshal(value)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewReader(data)
+		bodyBytes = data
 	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
-	if err != nil {
-		return err
+	for attempt := 0; attempt < 2; attempt++ {
+		var body io.Reader
+		if bodyBytes != nil {
+			body = bytes.NewReader(bodyBytes)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+u.accessToken)
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		resp, err := u.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		data, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			token, refreshErr := googleDriveAccessToken(ctx)
+			if refreshErr != nil {
+				return fmt.Errorf("Google Drive request failed: %s: %s; token refresh failed: %w", resp.Status, strings.TrimSpace(string(data)), refreshErr)
+			}
+			u.accessToken = token
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("Google Drive request failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+		}
+		if output == nil || len(data) == 0 {
+			return nil
+		}
+		return json.Unmarshal(data, output)
 	}
-	req.Header.Set("Authorization", "Bearer "+u.accessToken)
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	resp, err := u.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Google Drive request failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
-	}
-	if output == nil || len(data) == 0 {
-		return nil
-	}
-	return json.Unmarshal(data, output)
+	return fmt.Errorf("Google Drive request failed after token refresh")
 }
 
 func driveUploadName(courseSlug string, path string) string {
