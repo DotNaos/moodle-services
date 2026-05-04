@@ -43,6 +43,17 @@ type RevokeAPIKeyResponse struct {
 	Revoked bool `json:"revoked"`
 }
 
+type CreateCodexStateSnapshotRequest struct {
+	Kind      string         `json:"kind"`
+	ZipBase64 string         `json:"zipBase64"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+}
+
+type CodexStateSnapshotResponse struct {
+	Snapshot  store.CodexStateSnapshot `json:"snapshot"`
+	ZipBase64 string                   `json:"zipBase64,omitempty"`
+}
+
 type CoursesResponse struct {
 	Courses []moodle.Course `json:"courses"`
 }

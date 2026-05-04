@@ -10,6 +10,7 @@ import (
 	"time"
 
 	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
+	"github.com/DotNaos/moodle-services/pkg/codexstate"
 	svc "github.com/DotNaos/moodle-services/pkg/moodleservices"
 )
 
@@ -18,6 +19,13 @@ const internalWebSecretEnv = "MOODLE_WEB_INTERNAL_SECRET"
 func AuthQrExchange(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("bridge") != "" {
 		mobileBridge(w, r)
+		return
+	}
+	if r.URL.Query().Get("codex") == "state" {
+		clerkUserID, ok := authorizeInternalRequest(w, r, true)
+		if ok {
+			codexstate.Handle(w, r, clerkUserID)
+		}
 		return
 	}
 	if !svc.AllowMethods(w, r, http.MethodPost) {

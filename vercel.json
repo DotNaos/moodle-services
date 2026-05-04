@@ -57,6 +57,10 @@
       "destination": "/api/auth_qr_exchange?bridge=complete"
     },
     {
+      "source": "/api/auth/clerk/codex/state",
+      "destination": "/api/auth_qr_exchange?codex=state"
+    },
+    {
       "source": "/api/courses/:courseId/materials/:resourceId/text",
       "destination": "/api/material_text?courseId=:courseId&resourceId=:resourceId"
     },
