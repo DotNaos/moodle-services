@@ -72,7 +72,6 @@ func init() {
 		openCmd,
 		downloadCmd,
 		exportCmd,
-		backupCmd,
 		printCmd,
 		tuiCmd,
 		skillCmd,

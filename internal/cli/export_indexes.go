@@ -25,7 +25,7 @@ type exportCourseSummary struct {
 	MaterialCount int    `yaml:"material_count"`
 }
 
-func uploadExportNavigation(ctx context.Context, uploader backupDriveUploader, run backupRunContext, courses []backupCourse, records []exportMaterialRecord) error {
+func uploadExportNavigation(ctx context.Context, uploader exportDriveUploader, run exportRunContext, courses []exportCourse, records []exportMaterialRecord) error {
 	root, err := uploader.EnsureFolderPath(ctx, nil)
 	if err != nil {
 		return err
@@ -87,7 +87,7 @@ func uploadExportNavigation(ctx context.Context, uploader backupDriveUploader, r
 	return nil
 }
 
-func uploadCourseCurrentDocs(ctx context.Context, uploader backupDriveUploader, folderID string, course backupCourse, records []exportMaterialRecord) error {
+func uploadCourseCurrentDocs(ctx context.Context, uploader exportDriveUploader, folderID string, course exportCourse, records []exportMaterialRecord) error {
 	if _, err := uploader.UploadText(ctx, courseREADME(course), folderID, "README.md", true); err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func uploadCourseCurrentDocs(ctx context.Context, uploader backupDriveUploader, 
 	return nil
 }
 
-func uploadSearchIndexes(ctx context.Context, uploader backupDriveUploader, folderID string, records []exportMaterialRecord) error {
+func uploadSearchIndexes(ctx context.Context, uploader exportDriveUploader, folderID string, records []exportMaterialRecord) error {
 	sorted := append([]exportMaterialRecord(nil), records...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 	yamlData, err := yaml.Marshal(sorted)
@@ -146,7 +146,7 @@ func uploadSearchIndexes(ctx context.Context, uploader backupDriveUploader, fold
 	return nil
 }
 
-func buildSemesterIndex(run backupRunContext, courses []backupCourse, records []exportMaterialRecord) exportSemesterIndex {
+func buildSemesterIndex(run exportRunContext, courses []exportCourse, records []exportMaterialRecord) exportSemesterIndex {
 	counts := map[string]int{}
 	for _, record := range records {
 		counts[record.CourseSlug]++
@@ -172,7 +172,7 @@ func exportTutorial() string {
 	return "# How To Use This Export\n\n## Find a topic\n\nOpen `_search/query.index.yaml` or `_search/all-materials.index.md` and search for a keyword, course name, file type, Moodle section, or material title.\n\n## Read a course\n\nOpen `FS26/current/<course>/README.md`, then `course.briefing.md`, then `materials.index.md`.\n\n## Inspect originals\n\nUse each course's `raw/` folder for original PDFs, slides, documents, and other files.\n\n## Read extracted text\n\nUse each course's `text/` folder for Markdown text extracted from readable resources.\n\n## Inspect visual content\n\nUse each course's `images/` folder for rendered PDF pages and slides. `thumbnails/` contains the first rendered page per material.\n\n## Verify freshness\n\nCheck `FS26/latest.yaml` and `FS26/current/semester.briefing.md` for the latest completed run.\n"
 }
 
-func rootTOC(courses []backupCourse) string {
+func rootTOC(courses []exportCourse) string {
 	var b strings.Builder
 	b.WriteString("# Table Of Contents\n\n## FS26\n\n")
 	for _, course := range courses {
@@ -189,7 +189,7 @@ func searchREADME() string {
 	return "# Search Indexes\n\nUse this folder when you need to find material quickly.\n\n- `query.index.yaml`: full machine-readable index with metadata, Drive links, text links, and image links.\n- `query.index.jsonl`: one material per line for external indexing tools.\n- `all-materials.index.md`: readable table of all materials.\n- `by-course.md`: material list grouped by course.\n- `by-type.md`: material list grouped by file/material type.\n"
 }
 
-func semesterREADME(semester string, courses []backupCourse) string {
+func semesterREADME(semester string, courses []exportCourse) string {
 	return "# " + semester + "\n\nThis folder contains the current semester export and immutable timestamped runs.\n\n- `current/`: stable latest view for ChatGPT and humans.\n- `<timestamp-run-id>/`: immutable export history.\n- `latest.yaml`: pointer to the latest completed run.\n\n" + rootTOC(courses)
 }
 
@@ -197,15 +197,15 @@ func currentREADME(semester string) string {
 	return "# " + semester + " Current Export\n\nThis folder is overwritten after each successful export and is the best entry point for ChatGPT.\n\n- `semester.briefing.md`: short overview.\n- `semester.index.yaml`: machine-readable semester index.\n- `semester.index.md`: readable semester index.\n- `<course>/`: course-specific raw files, text, images, thumbnails, and indexes.\n"
 }
 
-func semesterBriefing(semester string, runID string, courses []backupCourse, records []exportMaterialRecord) string {
+func semesterBriefing(semester string, runID string, courses []exportCourse, records []exportMaterialRecord) string {
 	return fmt.Sprintf("# %s Briefing\n\nLatest run: `%s`\n\nCourses: %d\nMaterials: %d\n\nUse `_search/` for global lookup and this `current/` folder for the latest material.\n", semester, runID, len(courses), len(records))
 }
 
-func courseREADME(course backupCourse) string {
+func courseREADME(course exportCourse) string {
 	return "# " + course.Title + "\n\n- `course.briefing.md`: short course overview.\n- `materials.index.md`: readable list of exported materials.\n- `course.index.yaml`: machine-readable course index.\n- `raw/`: original files.\n- `text/`: extracted Markdown text.\n- `images/`: rendered pages and slides.\n- `thumbnails/`: first rendered page per material.\n"
 }
 
-func courseBriefing(course backupCourse, records []exportMaterialRecord) string {
+func courseBriefing(course exportCourse, records []exportMaterialRecord) string {
 	return fmt.Sprintf("# %s Briefing\n\nCourse slug: `%s`\nMoodle course ID: `%d`\nMaterials: %d\n\nUse `materials.index.md` for navigation, `text/` for reading, `images/` for visual inspection, and `raw/` for originals.\n", course.Title, course.Slug, course.ID, len(records))
 }
 
@@ -213,7 +213,7 @@ func semesterIndexMarkdown(index exportSemesterIndex) string {
 	return allMaterialsMarkdown(index.Materials)
 }
 
-func courseMaterialsMarkdown(course backupCourse, records []exportMaterialRecord) string {
+func courseMaterialsMarkdown(course exportCourse, records []exportMaterialRecord) string {
 	return "# Materials Index: " + course.Title + "\n\n" + materialTable(records)
 }
 

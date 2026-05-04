@@ -54,7 +54,7 @@ type exportImageEntry struct {
 	DriveLink string `yaml:"drive_link,omitempty" json:"drive_link,omitempty"`
 }
 
-func exportCourseDriveArtifacts(ctx context.Context, client *moodle.Client, uploader backupDriveUploader, run backupRunContext, course backupCourse, resources []moodle.Resource, textResults []backupTextExtraction, tempDir string) ([]exportMaterialRecord, error) {
+func exportCourseDriveArtifacts(ctx context.Context, client *moodle.Client, uploader exportDriveUploader, run exportRunContext, course exportCourse, resources []moodle.Resource, textResults []exportTextExtraction, tempDir string) ([]exportMaterialRecord, error) {
 	courseID := fmt.Sprintf("%d", course.ID)
 	runRawFolder, err := uploader.EnsureFolderPath(ctx, []string{run.Semester, "runs", run.RunID, "raw-files", course.Slug})
 	if err != nil {
@@ -157,13 +157,13 @@ func exportCourseDriveArtifacts(ctx context.Context, client *moodle.Client, uplo
 			}
 		}
 
-		images, imageStatus, imageErr := renderExportImages(rawPath, record.Type, filepath.Join(imageRoot, slugifyBackupName(resource.ID+"-"+resource.Name)))
+		images, imageStatus, imageErr := renderExportImages(rawPath, record.Type, filepath.Join(imageRoot, slugifyExportName(resource.ID+"-"+resource.Name)))
 		record.ImageStatus = imageStatus
 		if imageErr != nil {
 			record.ImageError = imageErr.Error()
 		}
 		if len(images) > 0 {
-			materialImageFolder, err := uploader.EnsureFolderPath(ctx, []string{run.Semester, "current", course.Slug, "images", slugifyBackupName(resource.ID + "-" + resource.Name)})
+			materialImageFolder, err := uploader.EnsureFolderPath(ctx, []string{run.Semester, "current", course.Slug, "images", slugifyExportName(resource.ID + "-" + resource.Name)})
 			if err != nil {
 				record.ImageStatus = "image_folder_failed"
 				record.ImageError = appendExportError(record.ImageError, err.Error())
@@ -179,7 +179,7 @@ func exportCourseDriveArtifacts(ctx context.Context, client *moodle.Client, uplo
 					}
 					record.Images = append(record.Images, exportImageEntry{Name: name, DriveID: imageUpload.ID, DriveLink: imageUpload.WebViewLink})
 					if idx == 0 {
-						thumb, err := uploader.UploadFile(ctx, imagePath, currentThumbsFolder.ID, slugifyBackupName(resource.ID+"-"+resource.Name)+".png", true)
+						thumb, err := uploader.UploadFile(ctx, imagePath, currentThumbsFolder.ID, slugifyExportName(resource.ID+"-"+resource.Name)+".png", true)
 						if err != nil {
 							record.ImageStatus = "partial"
 							record.ImageError = appendExportError(record.ImageError, "thumbnail upload failed: "+err.Error())
@@ -213,7 +213,7 @@ func appendExportError(existing string, next string) string {
 	return existing + "; " + next
 }
 
-func failedExportRecord(run backupRunContext, course backupCourse, courseID string, resource moodle.Resource, status string, err error) exportMaterialRecord {
+func failedExportRecord(run exportRunContext, course exportCourse, courseID string, resource moodle.Resource, status string, err error) exportMaterialRecord {
 	return exportMaterialRecord{
 		ID:            run.Semester + "/" + course.Slug + "/" + resource.ID,
 		Semester:      run.Semester,
@@ -236,7 +236,7 @@ func failedExportRecord(run backupRunContext, course backupCourse, courseID stri
 func exportResourceFilename(resource moodle.Resource) string {
 	base := buildResourceFilename(resource)
 	ext := filepath.Ext(base)
-	slug := slugifyBackupName(resource.ID + "-" + strings.TrimSuffix(base, ext))
+	slug := slugifyExportName(resource.ID + "-" + strings.TrimSuffix(base, ext))
 	if slug == "" {
 		slug = "resource-" + resource.ID
 	}

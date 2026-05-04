@@ -15,13 +15,13 @@ import (
 )
 
 const (
-	backupDriveRootName    = "fhgr-moodle-export"
-	backupIndexFile        = "export.index.yaml"
-	backupStatusComplete   = "complete"
-	backupStatusIncomplete = "incomplete"
+	exportDriveRootName    = "fhgr-moodle-export"
+	exportIndexFile        = "export.index.yaml"
+	exportStatusComplete   = "complete"
+	exportStatusIncomplete = "incomplete"
 )
 
-type schoolBackupConfig struct {
+type schoolExportConfig struct {
 	CurrentTerm string `yaml:"current_term"`
 	Timezone    string `yaml:"timezone"`
 	Moodle      struct {
@@ -30,22 +30,22 @@ type schoolBackupConfig struct {
 	} `yaml:"moodle"`
 }
 
-type backupIndex struct {
+type exportIndex struct {
 	GeneratedAt     string                       `yaml:"generated_at,omitempty"`
 	GoogleDriveRoot string                       `yaml:"google_drive_root,omitempty"`
-	Semesters       map[string]backupSemesterRef `yaml:"semesters"`
+	Semesters       map[string]exportSemesterRef `yaml:"semesters"`
 }
 
-type backupSemesterRef struct {
+type exportSemesterRef struct {
 	LatestRun           string                          `yaml:"latest_run,omitempty"`
 	Status              string                          `yaml:"status,omitempty"`
 	UpdatedAt           string                          `yaml:"updated_at,omitempty"`
 	GoogleDriveFolderID string                          `yaml:"google_drive_folder_id,omitempty"`
 	GoogleDriveLink     string                          `yaml:"google_drive_link,omitempty"`
-	Courses             map[string]backupCourseManifest `yaml:"courses,omitempty"`
+	Courses             map[string]exportCourseManifest `yaml:"courses,omitempty"`
 }
 
-type backupCourse struct {
+type exportCourse struct {
 	ID        int
 	Fullname  string
 	Shortname string
@@ -56,7 +56,7 @@ type backupCourse struct {
 	Dir       string
 }
 
-type backupRunContext struct {
+type exportRunContext struct {
 	Semester         string
 	RunID            string
 	GitHubRunID      string
@@ -65,17 +65,17 @@ type backupRunContext struct {
 	Workspace        string
 }
 
-func loadSchoolBackupConfig(root string) (schoolBackupConfig, error) {
+func loadSchoolExportConfig(root string) (schoolExportConfig, error) {
 	data, err := os.ReadFile(filepath.Join(root, "school.yaml"))
 	if err != nil {
-		return schoolBackupConfig{}, err
+		return schoolExportConfig{}, err
 	}
-	var cfg schoolBackupConfig
+	var cfg schoolExportConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return schoolBackupConfig{}, err
+		return schoolExportConfig{}, err
 	}
 	if strings.TrimSpace(cfg.CurrentTerm) == "" {
-		return schoolBackupConfig{}, fmt.Errorf("school.yaml requires current_term")
+		return schoolExportConfig{}, fmt.Errorf("school.yaml requires current_term")
 	}
 	if cfg.Moodle.CourseSlugOverrides == nil {
 		cfg.Moodle.CourseSlugOverrides = map[string]string{}
@@ -83,41 +83,41 @@ func loadSchoolBackupConfig(root string) (schoolBackupConfig, error) {
 	return cfg, nil
 }
 
-func loadBackupIndex(root string) (backupIndex, error) {
-	path := filepath.Join(root, backupIndexFile)
+func loadExportIndex(root string) (exportIndex, error) {
+	path := filepath.Join(root, exportIndexFile)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return backupIndex{Semesters: map[string]backupSemesterRef{}}, nil
+		return exportIndex{Semesters: map[string]exportSemesterRef{}}, nil
 	}
 	if err != nil {
-		return backupIndex{}, err
+		return exportIndex{}, err
 	}
-	var index backupIndex
+	var index exportIndex
 	if err := yaml.Unmarshal(data, &index); err != nil {
-		return backupIndex{}, err
+		return exportIndex{}, err
 	}
 	if index.Semesters == nil {
-		index.Semesters = map[string]backupSemesterRef{}
+		index.Semesters = map[string]exportSemesterRef{}
 	}
 	return index, nil
 }
 
-func writeBackupIndex(root string, index backupIndex) error {
+func writeExportIndex(root string, index exportIndex) error {
 	if index.Semesters == nil {
-		index.Semesters = map[string]backupSemesterRef{}
+		index.Semesters = map[string]exportSemesterRef{}
 	}
 	data, err := yaml.Marshal(index)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(root, backupIndexFile), data, 0o644)
+	return os.WriteFile(filepath.Join(root, exportIndexFile), data, 0o644)
 }
 
-func buildBackupRunContext(root string, semester string, now time.Time) backupRunContext {
+func buildExportRunContext(root string, semester string, now time.Time) exportRunContext {
 	started := now.UTC().Truncate(time.Second)
 	runID := envOrDefault("GITHUB_RUN_ID", "local")
 	attempt := envOrDefault("GITHUB_RUN_ATTEMPT", "1")
-	return backupRunContext{
+	return exportRunContext{
 		Semester:         semester,
 		RunID:            started.Format("2006-01-02-150405") + "-" + runID,
 		GitHubRunID:      runID,
@@ -137,7 +137,7 @@ func envOrDefault(name string, fallback string) string {
 
 var semesterDirPattern = regexp.MustCompile(`^(FS|HS)\d{2}$`)
 
-func semestersToProcess(root string, cfg schoolBackupConfig, index backupIndex, explicit string) ([]string, error) {
+func semestersToProcess(root string, cfg schoolExportConfig, index exportIndex, explicit string) ([]string, error) {
 	if explicit != "" {
 		return []string{explicit}, nil
 	}
@@ -151,7 +151,7 @@ func semestersToProcess(root string, cfg schoolBackupConfig, index backupIndex, 
 			continue
 		}
 		ref, ok := index.Semesters[entry.Name()]
-		if !ok || ref.Status != backupStatusComplete {
+		if !ok || ref.Status != exportStatusComplete {
 			selected = append(selected, entry.Name())
 		}
 	}
@@ -159,22 +159,22 @@ func semestersToProcess(root string, cfg schoolBackupConfig, index backupIndex, 
 	return selected, nil
 }
 
-func backupCoursesForSemester(client *moodle.Client, root string, cfg schoolBackupConfig, semester string) ([]backupCourse, error) {
+func exportCoursesForSemester(client *moodle.Client, root string, cfg schoolExportConfig, semester string) ([]exportCourse, error) {
 	courses, err := client.FetchCourses()
 	if err != nil {
 		return nil, err
 	}
-	result := make([]backupCourse, 0)
+	result := make([]exportCourse, 0)
 	for _, course := range courses {
 		if !courseMatchesSemester(course, semester) {
 			continue
 		}
-		slug := backupCourseSlug(course, cfg)
-		title := normalizeBackupCourseTitle(course.Fullname)
+		slug := exportCourseSlug(course, cfg)
+		title := normalizeExportCourseTitle(course.Fullname)
 		if title == "" {
 			title = humanizeSlug(slug)
 		}
-		result = append(result, backupCourse{
+		result = append(result, exportCourse{
 			ID:        course.ID,
 			Fullname:  course.Fullname,
 			Shortname: course.Shortname,
@@ -195,7 +195,7 @@ func courseMatchesSemester(course moodle.Course, semester string) bool {
 	return strings.Contains(course.Fullname, semester) || strings.Contains(course.Shortname, semester) || course.Category == semester
 }
 
-func backupCourseSlug(course moodle.Course, cfg schoolBackupConfig) string {
+func exportCourseSlug(course moodle.Course, cfg schoolExportConfig) string {
 	candidates := []string{
 		fmt.Sprintf("%d", course.ID),
 		course.Fullname,
@@ -206,23 +206,23 @@ func backupCourseSlug(course moodle.Course, cfg schoolBackupConfig) string {
 			return value
 		}
 	}
-	return slugifyBackupName(normalizeBackupCourseTitle(course.Fullname))
+	return slugifyExportName(normalizeExportCourseTitle(course.Fullname))
 }
 
-var backupTermSuffixPattern = regexp.MustCompile(`(?i)\s+(FS|HS)\d{2}\s*$`)
-var backupParenSuffixPattern = regexp.MustCompile(`\s+\([^)]*\)\s*$`)
-var backupSlugReplacePattern = regexp.MustCompile(`[^a-z0-9]+`)
+var exportTermSuffixPattern = regexp.MustCompile(`(?i)\s+(FS|HS)\d{2}\s*$`)
+var exportParenSuffixPattern = regexp.MustCompile(`\s+\([^)]*\)\s*$`)
+var exportSlugReplacePattern = regexp.MustCompile(`[^a-z0-9]+`)
 
-func normalizeBackupCourseTitle(value string) string {
+func normalizeExportCourseTitle(value string) string {
 	cleaned := html.UnescapeString(strings.TrimSpace(value))
-	cleaned = backupTermSuffixPattern.ReplaceAllString(cleaned, "")
-	cleaned = backupParenSuffixPattern.ReplaceAllString(cleaned, "")
+	cleaned = exportTermSuffixPattern.ReplaceAllString(cleaned, "")
+	cleaned = exportParenSuffixPattern.ReplaceAllString(cleaned, "")
 	return strings.TrimSpace(cleaned)
 }
 
-func slugifyBackupName(value string) string {
+func slugifyExportName(value string) string {
 	lower := strings.ToLower(html.UnescapeString(value))
-	lower = backupSlugReplacePattern.ReplaceAllString(lower, "-")
+	lower = exportSlugReplacePattern.ReplaceAllString(lower, "-")
 	lower = strings.Trim(lower, "-")
 	if lower == "" {
 		return "course"
