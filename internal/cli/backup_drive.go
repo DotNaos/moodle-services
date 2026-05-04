@@ -115,7 +115,7 @@ func newGoogleBackupDriveUploader(ctx context.Context) (*googleBackupDriveUpload
 		return nil, err
 	}
 	uploader := &googleBackupDriveUploader{
-		httpClient:   http.DefaultClient,
+		httpClient:   &http.Client{Timeout: 5 * time.Minute},
 		accessToken:  token,
 		rootFolderID: strings.TrimSpace(os.Getenv("GOOGLE_DRIVE_ROOT_FOLDER_ID")),
 	}
