@@ -95,6 +95,7 @@ func exportCourseDriveArtifacts(ctx context.Context, client *moodle.Client, uplo
 		if resource.Type != "resource" || strings.TrimSpace(resource.ID) == "" {
 			continue
 		}
+		fmt.Fprintf(os.Stderr, "exporting Moodle material: %s/%s %s\n", course.Slug, resource.ID, resource.Name)
 		filename := exportResourceFilename(resource)
 		rawPath := filepath.Join(rawDir, filename)
 		if err := os.MkdirAll(filepath.Dir(rawPath), 0o755); err != nil {
@@ -111,11 +112,13 @@ func exportCourseDriveArtifacts(ctx context.Context, client *moodle.Client, uplo
 		sum := sha256.Sum256(result.Data)
 		rawRun, err := uploader.UploadFile(ctx, rawPath, runRawFolder.ID, filename, false)
 		if err != nil {
-			return records, err
+			records = append(records, failedExportRecord(run, course, courseID, resource, "raw_run_upload_failed", err))
+			continue
 		}
 		rawCurrent, err := uploader.UploadFile(ctx, rawPath, currentRawFolder.ID, filename, true)
 		if err != nil {
-			return records, err
+			records = append(records, failedExportRecord(run, course, courseID, resource, "raw_current_upload_failed", err))
+			continue
 		}
 
 		record := exportMaterialRecord{
@@ -146,11 +149,12 @@ func exportCourseDriveArtifacts(ctx context.Context, client *moodle.Client, uplo
 
 		if textPath := textByResource[resource.ID]; textPath != "" {
 			textUpload, err := uploader.UploadFile(ctx, filepath.Join(course.Dir, textPath), currentTextFolder.ID, filepath.Base(textPath), true)
-			if err != nil {
-				return records, err
+			if err == nil {
+				record.TextRepoPath = filepath.ToSlash(filepath.Join(course.Slug, textPath))
+				record.TextCurrentLink = textUpload.WebViewLink
+			} else {
+				record.ImageError = appendExportError(record.ImageError, "text upload failed: "+err.Error())
 			}
-			record.TextRepoPath = filepath.ToSlash(filepath.Join(course.Slug, textPath))
-			record.TextCurrentLink = textUpload.WebViewLink
 		}
 
 		images, imageStatus, imageErr := renderExportImages(rawPath, record.Type, filepath.Join(imageRoot, slugifyBackupName(resource.ID+"-"+resource.Name)))
@@ -161,25 +165,31 @@ func exportCourseDriveArtifacts(ctx context.Context, client *moodle.Client, uplo
 		if len(images) > 0 {
 			materialImageFolder, err := uploader.EnsureFolderPath(ctx, []string{run.Semester, "current", course.Slug, "images", slugifyBackupName(resource.ID + "-" + resource.Name)})
 			if err != nil {
-				return records, err
-			}
-			record.ImagesCurrentLink = materialImageFolder.WebViewLink
-			for idx, imagePath := range images {
-				name := filepath.Base(imagePath)
-				imageUpload, err := uploader.UploadFile(ctx, imagePath, materialImageFolder.ID, name, true)
-				if err != nil {
-					return records, err
-				}
-				record.Images = append(record.Images, exportImageEntry{Name: name, DriveID: imageUpload.ID, DriveLink: imageUpload.WebViewLink})
-				if idx == 0 {
-					thumb, err := uploader.UploadFile(ctx, imagePath, currentThumbsFolder.ID, slugifyBackupName(resource.ID+"-"+resource.Name)+".png", true)
+				record.ImageStatus = "image_folder_failed"
+				record.ImageError = appendExportError(record.ImageError, err.Error())
+			} else {
+				record.ImagesCurrentLink = materialImageFolder.WebViewLink
+				for idx, imagePath := range images {
+					name := filepath.Base(imagePath)
+					imageUpload, err := uploader.UploadFile(ctx, imagePath, materialImageFolder.ID, name, true)
 					if err != nil {
-						return records, err
+						record.ImageStatus = "partial"
+						record.ImageError = appendExportError(record.ImageError, "image upload failed: "+err.Error())
+						break
 					}
-					record.ThumbnailLink = thumb.WebViewLink
+					record.Images = append(record.Images, exportImageEntry{Name: name, DriveID: imageUpload.ID, DriveLink: imageUpload.WebViewLink})
+					if idx == 0 {
+						thumb, err := uploader.UploadFile(ctx, imagePath, currentThumbsFolder.ID, slugifyBackupName(resource.ID+"-"+resource.Name)+".png", true)
+						if err != nil {
+							record.ImageStatus = "partial"
+							record.ImageError = appendExportError(record.ImageError, "thumbnail upload failed: "+err.Error())
+							continue
+						}
+						record.ThumbnailLink = thumb.WebViewLink
+					}
 				}
+				record.ImageCount = len(record.Images)
 			}
-			record.ImageCount = len(record.Images)
 		}
 		records = append(records, record)
 	}
@@ -189,6 +199,18 @@ func exportCourseDriveArtifacts(ctx context.Context, client *moodle.Client, uplo
 	}
 	_ = currentImagesFolder
 	return records, nil
+}
+
+func appendExportError(existing string, next string) string {
+	existing = strings.TrimSpace(existing)
+	next = strings.TrimSpace(next)
+	if existing == "" {
+		return next
+	}
+	if next == "" {
+		return existing
+	}
+	return existing + "; " + next
 }
 
 func failedExportRecord(run backupRunContext, course backupCourse, courseID string, resource moodle.Resource, status string, err error) exportMaterialRecord {
