@@ -398,6 +398,11 @@ func (u *googleBackupDriveUploader) createFolder(ctx context.Context, name strin
 	values.Set("supportsAllDrives", "true")
 	var file backupDriveFile
 	err := u.driveJSON(ctx, http.MethodPost, "https://www.googleapis.com/drive/v3/files?"+values.Encode(), metadata, "application/json", &file)
+	if err != nil && isGoogleDriveResponseRecoveryError(err) {
+		if found, findErr := u.findChildAfterDriveRecovery(ctx, parentID, name, driveFolderMimeType); findErr == nil && found.ID != "" {
+			return found, nil
+		}
+	}
 	return file, err
 }
 
@@ -429,6 +434,11 @@ func (u *googleBackupDriveUploader) createMultipartFile(ctx context.Context, nam
 	values.Set("supportsAllDrives", "true")
 	var file backupDriveFile
 	err = u.driveJSON(ctx, http.MethodPost, "https://www.googleapis.com/upload/drive/v3/files?"+values.Encode(), body.Bytes(), writer.FormDataContentType(), &file)
+	if err != nil && isGoogleDriveResponseRecoveryError(err) {
+		if found, findErr := u.findChildAfterDriveRecovery(ctx, folderID, name, ""); findErr == nil && found.ID != "" {
+			return found, nil
+		}
+	}
 	return file, err
 }
 
@@ -439,7 +449,39 @@ func (u *googleBackupDriveUploader) updateMedia(ctx context.Context, fileID stri
 	values.Set("supportsAllDrives", "true")
 	var file backupDriveFile
 	err := u.driveJSON(ctx, http.MethodPatch, "https://www.googleapis.com/upload/drive/v3/files/"+url.PathEscape(fileID)+"?"+values.Encode(), data, contentType, &file)
+	if err != nil && isGoogleDriveResponseRecoveryError(err) {
+		if found, findErr := u.getFile(ctx, fileID); findErr == nil && found.ID != "" {
+			return found, nil
+		}
+	}
 	return file, err
+}
+
+func isGoogleDriveResponseRecoveryError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "responsePreparationFailure") ||
+		strings.Contains(text, "error preparing the response")
+}
+
+func (u *googleBackupDriveUploader) findChildAfterDriveRecovery(ctx context.Context, parentID string, name string, mimeType string) (backupDriveFile, error) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+		found, err := u.findChild(ctx, parentID, name, mimeType)
+		if err == nil && found.ID != "" {
+			return found, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return backupDriveFile{}, lastErr
+	}
+	return backupDriveFile{}, nil
 }
 
 func (u *googleBackupDriveUploader) driveJSON(ctx context.Context, method string, endpoint string, input any, contentType string, output any) error {
