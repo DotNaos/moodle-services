@@ -34,6 +34,9 @@ type (
 	CreateOAuthClientInput            = store.CreateOAuthClientInput
 	CreateOAuthTokenInput             = store.CreateOAuthTokenInput
 	CreateMobileBridgeRequestInput    = store.CreateMobileBridgeRequestInput
+	CodexStateSnapshot                = store.CodexStateSnapshot
+	CodexStateSnapshotData            = store.CodexStateSnapshotData
+	CreateCodexStateSnapshotInput     = store.CreateCodexStateSnapshotInput
 	MobileBridgeRequest               = store.MobileBridgeRequest
 	Service                           = moodleservice.Service
 	Store                             = store.Store
