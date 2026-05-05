@@ -320,13 +320,14 @@ func sanitizeExportText(input string) string {
 	}, input)
 }
 
-func renderExportReport(run exportRunContext, status string, manifests []exportCourseManifest, failures []string) string {
+func renderExportReport(run exportRunContext, status string, manifests []exportCourseManifest, calendarEvents int, failures []string) string {
 	lines := []string{
 		"# FHGR Moodle Export Report: " + run.Semester,
 		"",
 		"- Run: `" + run.RunID + "`",
 		"- Status: `" + status + "`",
 		fmt.Sprintf("- Courses processed: %d", len(manifests)),
+		fmt.Sprintf("- Calendar events exported: %d", calendarEvents),
 		fmt.Sprintf("- Failures: %d", len(failures)),
 		"",
 		"## Courses",

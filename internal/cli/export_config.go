@@ -42,6 +42,7 @@ type exportSemesterRef struct {
 	UpdatedAt           string                          `yaml:"updated_at,omitempty"`
 	GoogleDriveFolderID string                          `yaml:"google_drive_folder_id,omitempty"`
 	GoogleDriveLink     string                          `yaml:"google_drive_link,omitempty"`
+	Calendar            *exportCalendarIndex            `yaml:"calendar,omitempty"`
 	Courses             map[string]exportCourseManifest `yaml:"courses,omitempty"`
 }
 

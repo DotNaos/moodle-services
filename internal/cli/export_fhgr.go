@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	moodleconfig "github.com/DotNaos/moodle-services/internal/config"
 	"github.com/DotNaos/moodle-services/internal/moodle"
 	"github.com/spf13/cobra"
 )
@@ -23,11 +24,12 @@ type exportFHGRCommandResult struct {
 }
 
 type exportSemesterResult struct {
-	Semester string   `json:"semester" yaml:"semester"`
-	RunID    string   `json:"runId" yaml:"run_id"`
-	Status   string   `json:"status" yaml:"status"`
-	Courses  int      `json:"courses" yaml:"courses"`
-	Failures []string `json:"failures,omitempty" yaml:"failures,omitempty"`
+	Semester       string   `json:"semester" yaml:"semester"`
+	RunID          string   `json:"runId" yaml:"run_id"`
+	Status         string   `json:"status" yaml:"status"`
+	Courses        int      `json:"courses" yaml:"courses"`
+	CalendarEvents int      `json:"calendarEvents" yaml:"calendar_events"`
+	Failures       []string `json:"failures,omitempty" yaml:"failures,omitempty"`
 }
 
 func init() {
@@ -53,7 +55,7 @@ func newFHGRExportCommand(hidden bool) *cobra.Command {
 			}
 			return writeCommandOutput(cmd, result, func(w io.Writer) error {
 				for _, item := range result.Results {
-					if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d courses\n", item.Semester, item.RunID, item.Status, item.Courses); err != nil {
+					if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d courses\t%d calendar events\n", item.Semester, item.RunID, item.Status, item.Courses, item.CalendarEvents); err != nil {
 						return err
 					}
 					for _, failure := range item.Failures {
@@ -146,6 +148,10 @@ func exportSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 	if err != nil {
 		return exportSemesterResult{}, err
 	}
+	moodleCfg, err := moodleconfig.LoadConfig(opts.ConfigPath)
+	if err != nil {
+		return exportSemesterResult{}, err
+	}
 
 	failures := []string{}
 	if len(courses) == 0 {
@@ -168,6 +174,10 @@ func exportSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 		manifests = append(manifests, manifest)
 		allRecords = append(allRecords, records...)
 	}
+	calendarResult, err := exportCalendarRun(ctx, uploader, run, cfg, courses, moodleCfg.CalendarURL, tempDir)
+	if err != nil {
+		failures = append(failures, "calendar: "+err.Error())
+	}
 	status := exportStatusComplete
 	if len(failures) > 0 {
 		status = exportStatusIncomplete
@@ -188,13 +198,13 @@ func exportSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 	if _, err := uploader.UploadText(ctx, runYAML, runFolder.ID, "run.yaml", false); err != nil {
 		return exportSemesterResult{}, err
 	}
-	if _, err := uploader.UploadText(ctx, renderExportReport(run, status, manifests, failures), runFolder.ID, "report.md", false); err != nil {
+	if _, err := uploader.UploadText(ctx, renderExportReport(run, status, manifests, calendarResult.Index.EventCount, failures), runFolder.ID, "report.md", false); err != nil {
 		return exportSemesterResult{}, err
 	}
 	if err := uploadProcessedExportFiles(ctx, uploader, processedFolder.ID, courses); err != nil {
 		return exportSemesterResult{}, err
 	}
-	if err := uploadExportNavigation(ctx, uploader, run, courses, allRecords); err != nil {
+	if err := uploadExportNavigation(ctx, uploader, run, courses, allRecords, calendarResult.Index); err != nil {
 		return exportSemesterResult{}, err
 	}
 	if status == exportStatusComplete {
@@ -206,8 +216,8 @@ func exportSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 			return exportSemesterResult{}, err
 		}
 	}
-	updateExportIndex(index, semester, run, status, completedAt, semesterFolder, manifests)
-	return exportSemesterResult{Semester: semester, RunID: run.RunID, Status: status, Courses: len(manifests), Failures: failures}, nil
+	updateExportIndex(index, semester, run, status, completedAt, semesterFolder, manifests, calendarResult.Index)
+	return exportSemesterResult{Semester: semester, RunID: run.RunID, Status: status, Courses: len(manifests), CalendarEvents: calendarResult.Index.EventCount, Failures: failures}, nil
 }
 
 func exportCourseRun(ctx context.Context, client *moodle.Client, run exportRunContext, course exportCourse, rawFolder exportDriveFile, runFolder exportDriveFile, uploader exportDriveUploader, tempDir string) (exportCourseManifest, []exportMaterialRecord, error) {
@@ -312,7 +322,7 @@ func isExportMarkdownFile(path string) (bool, error) {
 	return looksLikeExportText(data), nil
 }
 
-func updateExportIndex(index *exportIndex, semester string, run exportRunContext, status string, completedAt time.Time, semesterFolder exportDriveFile, manifests []exportCourseManifest) {
+func updateExportIndex(index *exportIndex, semester string, run exportRunContext, status string, completedAt time.Time, semesterFolder exportDriveFile, manifests []exportCourseManifest, calendar exportCalendarIndex) {
 	index.GeneratedAt = isoUTC(completedAt)
 	index.GoogleDriveRoot = exportDriveRootName
 	if index.Semesters == nil {
@@ -328,6 +338,14 @@ func updateExportIndex(index *exportIndex, semester string, run exportRunContext
 		UpdatedAt:           isoUTC(completedAt),
 		GoogleDriveFolderID: semesterFolder.ID,
 		GoogleDriveLink:     semesterFolder.WebViewLink,
+		Calendar:            completedCalendarIndex(calendar),
 		Courses:             courses,
 	}
+}
+
+func completedCalendarIndex(calendar exportCalendarIndex) *exportCalendarIndex {
+	if strings.TrimSpace(calendar.Semester) == "" {
+		return nil
+	}
+	return &calendar
 }
