@@ -17,6 +17,8 @@ import (
 var exportWorkspace string
 var exportSemesterFlag string
 var exportUpload bool
+var exportArchiveOutput string
+var exportArchiveProfile string
 
 type exportFHGRCommandResult struct {
 	Action  string                 `json:"action" yaml:"action"`
@@ -29,7 +31,14 @@ type exportSemesterResult struct {
 	Status         string   `json:"status" yaml:"status"`
 	Courses        int      `json:"courses" yaml:"courses"`
 	CalendarEvents int      `json:"calendarEvents" yaml:"calendar_events"`
+	ArchivePath    string   `json:"archivePath,omitempty" yaml:"archive_path,omitempty"`
 	Failures       []string `json:"failures,omitempty" yaml:"failures,omitempty"`
+}
+
+type exportSemesterRunOptions struct {
+	Upload         bool
+	ArchiveOutput  string
+	ArchiveProfile string
 }
 
 func init() {
@@ -49,7 +58,7 @@ func newFHGRExportCommand(hidden bool) *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := runMoodleExportFHGR(cmd.Context(), exportWorkspace, exportSemesterFlag, exportUpload)
+			result, err := runMoodleExportFHGR(cmd.Context(), exportWorkspace, exportSemesterFlag, exportUpload, exportArchiveOutput)
 			if err != nil {
 				return err
 			}
@@ -57,6 +66,11 @@ func newFHGRExportCommand(hidden bool) *cobra.Command {
 				for _, item := range result.Results {
 					if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d courses\t%d calendar events\n", item.Semester, item.RunID, item.Status, item.Courses, item.CalendarEvents); err != nil {
 						return err
+					}
+					if item.ArchivePath != "" {
+						if _, err := fmt.Fprintf(w, "  archive: %s\n", item.ArchivePath); err != nil {
+							return err
+						}
 					}
 					for _, failure := range item.Failures {
 						if _, err := fmt.Fprintf(w, "  failure: %s\n", failure); err != nil {
@@ -71,10 +85,12 @@ func newFHGRExportCommand(hidden bool) *cobra.Command {
 	cmd.Flags().StringVar(&exportWorkspace, "workspace", ".", "School workspace root containing school.yaml")
 	cmd.Flags().StringVar(&exportSemesterFlag, "semester", "", "Process one semester only")
 	cmd.Flags().BoolVar(&exportUpload, "upload", false, "Upload raw and processed output to Google Drive")
+	cmd.Flags().StringVar(&exportArchiveOutput, "archive-output", "", "Optional local zip archive path or output directory")
+	cmd.Flags().StringVar(&exportArchiveProfile, "archive-profile", "full", "Archive layout: full or goodnotes")
 	return cmd
 }
 
-func runMoodleExportFHGR(ctx context.Context, workspace string, semester string, upload bool) (exportFHGRCommandResult, error) {
+func runMoodleExportFHGR(ctx context.Context, workspace string, semester string, upload bool, archiveOutput string) (exportFHGRCommandResult, error) {
 	root, err := filepath.Abs(workspace)
 	if err != nil {
 		return exportFHGRCommandResult{}, err
@@ -91,6 +107,13 @@ func runMoodleExportFHGR(ctx context.Context, workspace string, semester string,
 	if err != nil {
 		return exportFHGRCommandResult{}, err
 	}
+	if strings.TrimSpace(archiveOutput) != "" && filepath.Ext(archiveOutput) == ".zip" && len(selected) > 1 {
+		return exportFHGRCommandResult{}, fmt.Errorf("--archive-output must be a directory when exporting multiple semesters")
+	}
+	archiveProfile, err := normalizeExportArchiveProfile(exportArchiveProfile)
+	if err != nil {
+		return exportFHGRCommandResult{}, err
+	}
 	client, err := ensureAuthenticatedClient()
 	if err != nil {
 		return exportFHGRCommandResult{}, err
@@ -102,7 +125,11 @@ func runMoodleExportFHGR(ctx context.Context, workspace string, semester string,
 
 	result := exportFHGRCommandResult{Action: "export-fhgr", Results: make([]exportSemesterResult, 0, len(selected))}
 	for _, term := range selected {
-		semesterResult, err := exportSemesterRun(ctx, client, root, cfg, term, uploader, &index)
+		semesterResult, err := exportSemesterRun(ctx, client, root, cfg, term, uploader, &index, exportSemesterRunOptions{
+			Upload:         upload,
+			ArchiveOutput:  archiveOutput,
+			ArchiveProfile: archiveProfile,
+		})
 		if err != nil {
 			return exportFHGRCommandResult{}, err
 		}
@@ -126,7 +153,7 @@ func buildExportDriveUploader(ctx context.Context, upload bool) (exportDriveUplo
 	return newGoogleExportDriveUploader(ctx)
 }
 
-func exportSemesterRun(ctx context.Context, client *moodle.Client, root string, cfg schoolExportConfig, semester string, uploader exportDriveUploader, index *exportIndex) (exportSemesterResult, error) {
+func exportSemesterRun(ctx context.Context, client *moodle.Client, root string, cfg schoolExportConfig, semester string, uploader exportDriveUploader, index *exportIndex, options exportSemesterRunOptions) (exportSemesterResult, error) {
 	run := buildExportRunContext(root, semester, time.Now())
 	courses, err := exportCoursesForSemester(client, root, cfg, semester)
 	if err != nil {
@@ -166,7 +193,7 @@ func exportSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 
 	allRecords := make([]exportMaterialRecord, 0)
 	for _, course := range courses {
-		manifest, records, err := exportCourseRun(ctx, client, run, course, rawFolder, runFolder, uploader, tempDir)
+		manifest, records, err := exportCourseRun(ctx, client, run, course, rawFolder, runFolder, uploader, tempDir, options)
 		if err != nil {
 			failures = append(failures, course.Slug+": "+err.Error())
 			continue
@@ -207,6 +234,17 @@ func exportSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 	if err := uploadExportNavigation(ctx, uploader, run, courses, allRecords, calendarResult.Index); err != nil {
 		return exportSemesterResult{}, err
 	}
+	archivePath := ""
+	if strings.TrimSpace(options.ArchiveOutput) != "" {
+		resolvedArchivePath, err := resolveExportArchivePath(options.ArchiveOutput, run)
+		if err != nil {
+			return exportSemesterResult{}, err
+		}
+		if err := writeExportArchive(run, courses, allRecords, manifests, calendarResult.Index, tempDir, resolvedArchivePath, options.ArchiveProfile); err != nil {
+			return exportSemesterResult{}, err
+		}
+		archivePath = resolvedArchivePath
+	}
 	if status == exportStatusComplete {
 		latest, err := yamlString(exportLatestYAML{Semester: semester, LatestRun: run.RunID, Status: status, UpdatedAt: isoUTC(completedAt)})
 		if err != nil {
@@ -217,15 +255,15 @@ func exportSemesterRun(ctx context.Context, client *moodle.Client, root string, 
 		}
 	}
 	updateExportIndex(index, semester, run, status, completedAt, semesterFolder, manifests, calendarResult.Index)
-	return exportSemesterResult{Semester: semester, RunID: run.RunID, Status: status, Courses: len(manifests), CalendarEvents: calendarResult.Index.EventCount, Failures: failures}, nil
+	return exportSemesterResult{Semester: semester, RunID: run.RunID, Status: status, Courses: len(manifests), CalendarEvents: calendarResult.Index.EventCount, ArchivePath: archivePath, Failures: failures}, nil
 }
 
-func exportCourseRun(ctx context.Context, client *moodle.Client, run exportRunContext, course exportCourse, rawFolder exportDriveFile, runFolder exportDriveFile, uploader exportDriveUploader, tempDir string) (exportCourseManifest, []exportMaterialRecord, error) {
+func exportCourseRun(ctx context.Context, client *moodle.Client, run exportRunContext, course exportCourse, rawFolder exportDriveFile, runFolder exportDriveFile, uploader exportDriveUploader, tempDir string, options exportSemesterRunOptions) (exportCourseManifest, []exportMaterialRecord, error) {
 	if err := ensureExportCourseFiles(course); err != nil {
 		return exportCourseManifest{}, nil, err
 	}
 	courseID := fmt.Sprintf("%d", course.ID)
-	resources, _, err := client.FetchCourseResources(courseID)
+	resources, contextID, err := client.FetchCourseResources(courseID)
 	if err != nil {
 		return exportCourseManifest{}, nil, err
 	}
@@ -237,7 +275,7 @@ func exportCourseRun(ctx context.Context, client *moodle.Client, run exportRunCo
 		return exportCourseManifest{}, nil, err
 	}
 	zipPath := filepath.Join(tempDir, course.Slug+".zip")
-	if _, err := exportCourseZip(client, resources, zipPath); err != nil {
+	if _, err := exportCourseZip(client, resources, contextID, zipPath); err != nil {
 		return exportCourseManifest{}, nil, err
 	}
 	sha, err := sha256File(zipPath)
@@ -248,10 +286,15 @@ func exportCourseRun(ctx context.Context, client *moodle.Client, run exportRunCo
 	if err != nil {
 		return exportCourseManifest{}, nil, err
 	}
-	textResults := extractExportResourceTexts(client, course, resources)
-	records, err := exportCourseDriveArtifacts(ctx, client, uploader, run, course, resources, textResults, tempDir)
-	if err != nil {
-		return exportCourseManifest{}, nil, err
+	textResults := []exportTextExtraction{}
+	records := []exportMaterialRecord{}
+	if !goodNotesArchiveOnly(options) {
+		textResults = extractExportResourceTexts(client, course, resources)
+		var err error
+		records, err = exportCourseDriveArtifacts(ctx, client, uploader, run, course, resources, textResults, tempDir)
+		if err != nil {
+			return exportCourseManifest{}, nil, err
+		}
 	}
 	if _, err := writeExportMaterialIndex(course, run, zipPath, sha, rawUpload, resources, textResults); err != nil {
 		return exportCourseManifest{}, nil, err
@@ -276,6 +319,10 @@ func exportCourseRun(ctx context.Context, client *moodle.Client, run exportRunCo
 			"view_url":  course.ViewURL,
 		},
 	}, records, nil
+}
+
+func goodNotesArchiveOnly(options exportSemesterRunOptions) bool {
+	return !options.Upload && strings.TrimSpace(options.ArchiveOutput) != "" && strings.EqualFold(options.ArchiveProfile, "goodnotes")
 }
 
 func uploadProcessedExportFiles(ctx context.Context, uploader exportDriveUploader, folderID string, courses []exportCourse) error {
