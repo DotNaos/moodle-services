@@ -51,14 +51,16 @@ moodle download file <course-id|name|current|0> <resource-id|name|current|0> --o
 moodle export course <course-id|name|current|0> --output-dir <path>
 ```
 
-## Backup FHGR Moodle to Drive
+## Export FHGR Moodle
 
 ```sh
-moodle backup fhgr --workspace /Users/oli/school --upload
-moodle backup fhgr --workspace /Users/oli/school --semester FS26 --upload
+moodle export fhgr --workspace /Users/oli/school --upload
+moodle export fhgr --workspace /Users/oli/school --semester FS26 --upload
+moodle export fhgr --workspace /Users/oli/school --semester FS26 --archive-output /tmp/fhgr-moodle-archive
+moodle export fhgr --workspace /Users/oli/school --semester FS26 --archive-output /tmp/fhgr-goodnotes --archive-profile goodnotes
 ```
 
-The command reads `school.yaml`, always processes `current_term`, and only backfills older semesters when `backup.index.yaml` does not already show a completed backup.
+The command reads `school.yaml`, always processes `current_term`, and only backfills older semesters when `export.index.yaml` does not already show a completed export. Use `--archive-output` to write a local ZIP archive with sanitized offline file paths. Use `--archive-profile goodnotes` for a PDF-only archive grouped as `<semester>/<course>/<section>/<Moodle activity name>.pdf`; general course information sections are omitted.
 
 ## Shell completion
 

@@ -52,7 +52,7 @@ var exportCmd = &cobra.Command{
 			return err
 		}
 
-		resources, _, err := client.FetchCourseResources(courseID)
+		resources, contextID, err := client.FetchCourseResources(courseID)
 		if err != nil {
 			return err
 		}
@@ -63,7 +63,7 @@ var exportCmd = &cobra.Command{
 			return err
 		}
 
-		count, err := exportCourseZip(client, resources, zipPath)
+		count, err := exportCourseZip(client, resources, contextID, zipPath)
 		if err != nil {
 			return err
 		}
@@ -107,9 +107,12 @@ func resolveExportPath(courseName string, outputPath string) (string, error) {
 	return outputPath, nil
 }
 
-func exportCourseZip(client *moodle.Client, resources []moodle.Resource, path string) (int, error) {
+func exportCourseZip(client *moodle.Client, resources []moodle.Resource, contextID string, path string) (int, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return 0, err
+	}
+	if strings.TrimSpace(contextID) != "" && countExportFileResources(resources) > 1 {
+		return downloadCourseContentZip(client, contextID, path)
 	}
 	file, err := os.Create(path)
 	if err != nil {
@@ -147,4 +150,36 @@ func exportCourseZip(client *moodle.Client, resources []moodle.Resource, path st
 		count++
 	}
 	return count, nil
+}
+
+func countExportFileResources(resources []moodle.Resource) int {
+	count := 0
+	for _, res := range resources {
+		if res.Type == "resource" {
+			count++
+		}
+	}
+	return count
+}
+
+func downloadCourseContentZip(client *moodle.Client, contextID string, path string) (int, error) {
+	sesskey, err := client.GetSesskey()
+	if err != nil {
+		return 0, err
+	}
+	result, err := client.DownloadFileToBuffer("/course/downloadcontent.php?contextid=" + strings.TrimSpace(contextID) + "&download=1&sesskey=" + sesskey)
+	if err != nil {
+		return 0, err
+	}
+	if err := os.WriteFile(path, result.Data, 0o644); err != nil {
+		return 0, err
+	}
+	entries, err := readExportZipEntries(path)
+	if err != nil {
+		return 0, fmt.Errorf("downloaded course content is not a readable zip: %w", err)
+	}
+	if len(entries) == 0 {
+		return 0, fmt.Errorf("downloaded course content zip is empty")
+	}
+	return len(entries), nil
 }
