@@ -6,8 +6,8 @@ developer or agent to continue the work.
 
 ## Decision Summary
 
-- Rename the current `moodle-cli` project to **Moodle Services**.
-- Rename the GitHub repository from `moodle-cli` to `moodle-services`.
+- The old `moodle-cli` project is now **Moodle Services**.
+- The GitHub repository is `moodle-services`.
 - Keep the installed command name as `moodle` for now, because it is ergonomic and
   avoids breaking local workflows.
 - Make Moodle Services the single backend authority for Moodle access, server APIs,
@@ -23,10 +23,10 @@ developer or agent to continue the work.
 
 ### `moodle-services`
 
-Current path before rename:
+Current path:
 
 ```text
-/Users/oli/projects.school/tools/moodle/moodle-cli
+/Users/oli/projects.school/tools/moodle/moodle-services
 ```
 
 Target responsibility:
@@ -437,7 +437,7 @@ audit_events
 
 - Confirm `Moodle Services` as the project name.
 - Rename docs and user-facing wording.
-- Prepare GitHub repository rename from `moodle-cli` to `moodle-services`.
+- Keep local project naming aligned with the `moodle-services` repository.
 - Keep binary command `moodle`.
 
 ### Phase 2: Internal service boundaries

@@ -51,7 +51,7 @@ rm -f "${output}"
 
 pkgbuild_args=(
   --root "${work_dir}/payload"
-  --identifier "com.dotnaos.moodle-cli"
+  --identifier "com.dotnaos.moodle-services"
   --version "${version#v}"
   --install-location "/"
 )

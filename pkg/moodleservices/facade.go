@@ -17,11 +17,15 @@ var (
 )
 
 const ActiveSchoolID = moodle.ActiveSchoolID
+const DefaultMobileLaunchService = moodle.DefaultMobileLaunchService
+const DefaultMobileLaunchScheme = moodle.DefaultMobileLaunchScheme
 
 type (
 	APIKeyRecord                      = store.APIKeyRecord
 	Box                               = appcrypto.Box
 	DataClient                        = moodleservice.DataClient
+	MobileLaunchToken                 = moodle.MobileLaunchToken
+	MobileLaunchURL                   = moodle.MobileLaunchURL
 	MobileClient                      = moodle.MobileClient
 	MobileQRLink                      = moodle.MobileQRLink
 	MobileToken                       = moodle.MobileToken
@@ -78,6 +82,26 @@ func ExchangeMobileQRToken(link MobileQRLink) (MobileToken, error) {
 
 func MobileSessionFromToken(token MobileToken) MobileSession {
 	return moodle.MobileSessionFromToken(token)
+}
+
+func BuildMobileLaunchURL(siteURL string, service string, passport string, urlScheme string) (MobileLaunchURL, error) {
+	return moodle.BuildMobileLaunchURL(siteURL, service, passport, urlScheme)
+}
+
+func NewMobileLaunchPassport() (string, error) {
+	return moodle.NewMobileLaunchPassport()
+}
+
+func ExpectedMobileLaunchSiteID(siteURL string, passport string) string {
+	return moodle.ExpectedMobileLaunchSiteID(siteURL, passport)
+}
+
+func ParseMobileLaunchCallback(raw string) (MobileLaunchToken, error) {
+	return moodle.ParseMobileLaunchCallback(raw)
+}
+
+func MobileTokenFromLaunch(siteURL string, launch MobileLaunchToken) MobileToken {
+	return moodle.MobileTokenFromLaunch(siteURL, launch)
 }
 
 func NewMobileClient(session MobileSession, schoolID string) (*MobileClient, error) {

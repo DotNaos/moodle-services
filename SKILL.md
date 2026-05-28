@@ -1,13 +1,13 @@
 ---
-name: moodle-cli
-description: "Use when handling Moodle CLI tasks: login, list courses/files, lecture timetable lookups, printing file contents, and course download/export operations."
+name: moodle-services
+description: "Use when handling Moodle Services tasks: login, list courses/files, lecture timetable lookups, printing file contents, service APIs, and course download/export operations."
 ---
 
 # Study Moodle
 
 ## Overview
 
-Use the local Moodle CLI to login, list courses, files, and export/download course materials. Read the CLI repo docs before running commands.
+Use the local Moodle Services CLI to login, list courses, files, and export/download course materials. Read the repo docs before running commands.
 
 ## Quick Start
 
@@ -69,5 +69,5 @@ Use the local Moodle CLI to login, list courses, files, and export/download cour
 
 ### references/
 
-- `skills/moodle-cli/references/moodle-cli.md`: Quick command and data-location reference for the CLI.
-- `skills/moodle-cli/references/timetable.md`: Timetable command reference.
+- `skills/moodle-services/references/moodle-services.md`: Quick command and data-location reference for the CLI.
+- `skills/moodle-services/references/timetable.md`: Timetable command reference.
