@@ -1,4 +1,4 @@
-#define MyAppName "moodle-cli"
+#define MyAppName "moodle-services"
 
 #ifndef AppVersion
   #error AppVersion must be defined
@@ -33,8 +33,8 @@ AppId={{7A7A1A5A-4A5E-4B64-B1B2-13C939D7A111}}
 AppName={#MyAppName}
 AppVersion={#AppVersion}
 AppPublisher=DotNaos
-DefaultDirName={localappdata}\Programs\moodle-cli
-DefaultGroupName=moodle-cli
+DefaultDirName={localappdata}\Programs\moodle-services
+DefaultGroupName=moodle-services
 DisableProgramGroupPage=yes
 OutputDir={#OutputDir}
 OutputBaseFilename={#OutputBase}
@@ -51,7 +51,7 @@ UninstallDisplayIcon={app}\moodle.exe
 Source: "{#SourceDir}\moodle.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\moodle-cli"; Filename: "{app}\moodle.exe"
+Name: "{autoprograms}\moodle-services"; Filename: "{app}\moodle.exe"
 
 [Code]
 function NeedsAddPath(Path: string): Boolean;

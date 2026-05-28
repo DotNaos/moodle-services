@@ -32,8 +32,8 @@ if [[ -z "${version}" || -z "${app}" || -z "${output}" ]]; then
 fi
 
 work_dir="$(mktemp -d)"
-stage_dir="${work_dir}/moodle-cli"
-rw_dmg="${work_dir}/moodle-cli-temp.dmg"
+stage_dir="${work_dir}/moodle-services"
+rw_dmg="${work_dir}/moodle-services-temp.dmg"
 attach_plist="${work_dir}/attach.plist"
 device=""
 cleanup() {
@@ -58,13 +58,13 @@ detach_device() {
 }
 
 mkdir -p "${stage_dir}"
-cp -R "${app}" "${stage_dir}/moodle-cli.app"
+cp -R "${app}" "${stage_dir}/moodle-services.app"
 ln -s /Applications "${stage_dir}/Applications"
 
 mkdir -p "$(dirname "${output}")"
 rm -f "${output}"
 
-volume_name="moodle-cli ${version}"
+volume_name="moodle-services ${version}"
 
 hdiutil create \
   -volname "${volume_name}" \
@@ -117,7 +117,7 @@ tell application "Finder"
     close
     open
     delay 1
-    set position of item "moodle-cli" of container window to {210, 190}
+    set position of item "moodle-services" of container window to {210, 190}
     set position of item "Applications" of container window to {520, 190}
     close
     open

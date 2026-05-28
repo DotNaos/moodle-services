@@ -16,7 +16,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X github.com/DotNaos/moodle-cli/internal/version.version={{ .Version }} -X github.com/DotNaos/moodle-cli/internal/version.commit={{ .Commit }} -X github.com/DotNaos/moodle-cli/internal/version.buildDate={{ .Date }}
+      - -s -w -X github.com/DotNaos/moodle-services/internal/version.version={{ .Version }} -X github.com/DotNaos/moodle-services/internal/version.commit={{ .Commit }} -X github.com/DotNaos/moodle-services/internal/version.buildDate={{ .Date }}
 
 archives:
   - id: archives

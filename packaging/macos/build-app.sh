@@ -32,7 +32,7 @@ if [[ -z "${archive}" || -z "${version}" || -z "${output}" ]]; then
 fi
 
 work_dir="$(mktemp -d)"
-app_dir="${work_dir}/moodle-cli.app"
+app_dir="${work_dir}/moodle-services.app"
 contents_dir="${app_dir}/Contents"
 macos_dir="${contents_dir}/MacOS"
 resources_dir="${contents_dir}/Resources"
@@ -50,7 +50,7 @@ if [[ ! -f "${source_icon}" ]]; then
   exit 1
 fi
 
-iconset_dir="${work_dir}/moodle-cli.iconset"
+iconset_dir="${work_dir}/moodle-services.iconset"
 mkdir -p "${iconset_dir}"
 for size in 16 32 64 128 256 512; do
   sips -z "${size}" "${size}" "${source_icon}" --out "${iconset_dir}/icon_${size}x${size}.png" >/dev/null
@@ -60,7 +60,7 @@ sips -z 64 64 "${source_icon}" --out "${iconset_dir}/icon_32x32@2x.png" >/dev/nu
 sips -z 256 256 "${source_icon}" --out "${iconset_dir}/icon_128x128@2x.png" >/dev/null
 sips -z 512 512 "${source_icon}" --out "${iconset_dir}/icon_256x256@2x.png" >/dev/null
 sips -z 1024 1024 "${source_icon}" --out "${iconset_dir}/icon_512x512@2x.png" >/dev/null
-iconutil -c icns "${iconset_dir}" -o "${resources_dir}/moodle-cli.icns"
+iconutil -c icns "${iconset_dir}" -o "${resources_dir}/moodle-services.icns"
 
 cat > "${contents_dir}/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -70,17 +70,17 @@ cat > "${contents_dir}/Info.plist" <<EOF
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>moodle-cli</string>
+  <string>moodle-services</string>
   <key>CFBundleExecutable</key>
-  <string>moodle-cli</string>
+  <string>moodle-services</string>
   <key>CFBundleIdentifier</key>
-  <string>com.dotnaos.moodle-cli</string>
+  <string>com.dotnaos.moodle-services</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleIconFile</key>
-  <string>moodle-cli.icns</string>
+  <string>moodle-services.icns</string>
   <key>CFBundleName</key>
-  <string>moodle-cli</string>
+  <string>moodle-services</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -95,7 +95,7 @@ cat > "${contents_dir}/Info.plist" <<EOF
 </plist>
 EOF
 
-cat > "${macos_dir}/moodle-cli" <<'EOF'
+cat > "${macos_dir}/moodle-services" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -107,7 +107,7 @@ link_path="${user_bin}/moodle"
 
 if [[ "${app_bundle}" == /Volumes/* ]]; then
   /usr/bin/osascript <<'APPLESCRIPT'
-display dialog "Drag moodle-cli.app into Applications first, then open it to install the command-line tool." buttons {"OK"} default button "OK" with title "moodle-cli"
+display dialog "Drag moodle-services.app into Applications first, then open it to install the command-line tool." buttons {"OK"} default button "OK" with title "moodle-services"
 APPLESCRIPT
   exit 1
 fi
@@ -121,7 +121,7 @@ if [[ "${MOODLE_CLI_NO_TERMINAL:-}" == "1" ]]; then
 fi
 
 /usr/bin/osascript <<'APPLESCRIPT'
-set launchCommand to "export PATH=\"$HOME/.local/bin:$PATH\"; clear; echo \"moodle-cli is ready.\"; echo \"The command is linked at ~/.local/bin/moodle.\"; echo; \"$HOME/.local/bin/moodle\" version; echo; echo \"You can now run moodle in this terminal.\"; exec \"$SHELL\" -l"
+set launchCommand to "export PATH=\"$HOME/.local/bin:$PATH\"; clear; echo \"moodle-services is ready.\"; echo \"The command is linked at ~/.local/bin/moodle.\"; echo; \"$HOME/.local/bin/moodle\" version; echo; echo \"You can now run moodle in this terminal.\"; exec \"$SHELL\" -l"
 tell application "Terminal"
   activate
   do script launchCommand
@@ -129,7 +129,7 @@ end tell
 APPLESCRIPT
 EOF
 
-chmod 0755 "${macos_dir}/moodle-cli"
+chmod 0755 "${macos_dir}/moodle-services"
 find "${app_dir}" -name '._*' -delete
 xattr -cr "${app_dir}"
 
