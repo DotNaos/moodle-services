@@ -130,7 +130,13 @@ func ServiceForRequest(r *http.Request, cfg ServerEnv) (Service, func(), error) 
 			calendarURL = decrypted
 		}
 	}
-	return Service{Client: client, CalendarURL: calendarURL}, closeFn, nil
+	webexSessionJSON := ""
+	if credentials.EncryptedWebexSessionJSON != "" {
+		if decrypted, err := box.DecryptString(credentials.EncryptedWebexSessionJSON); err == nil {
+			webexSessionJSON = decrypted
+		}
+	}
+	return Service{Client: client, CalendarURL: calendarURL, WebexSessionJSON: webexSessionJSON}, closeFn, nil
 }
 
 func WriteJSON(w http.ResponseWriter, status int, payload any) {

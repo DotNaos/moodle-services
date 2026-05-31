@@ -26,10 +26,16 @@ type CategoryClient interface {
 	FetchCategories() ([]moodle.Category, error)
 }
 
+type WebexCredentials struct {
+	Username string
+	Password string
+}
+
 type Service struct {
-	Client      DataClient
-	CalendarURL string
-	Now         func() time.Time
+	Client           DataClient
+	CalendarURL      string
+	WebexSessionJSON string
+	Now              func() time.Time
 }
 
 type SearchResult struct {

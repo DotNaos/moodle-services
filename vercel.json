@@ -41,6 +41,10 @@
       "destination": "/api/auth_qr_exchange?clerk=1"
     },
     {
+      "source": "/api/auth/clerk/login",
+      "destination": "/api/auth_qr_exchange?clerk=login"
+    },
+    {
       "source": "/api/auth/clerk/session",
       "destination": "/api/auth_qr_exchange?clerk=session"
     },
@@ -71,6 +75,18 @@
     {
       "source": "/api/courses/:courseId/materials",
       "destination": "/api/materials?courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/recordings",
+      "destination": "/api/courses?route=recordings&courseId=:courseId"
+    },
+    {
+      "source": "/api/calendar",
+      "destination": "/api/courses?route=calendar"
+    },
+    {
+      "source": "/api/webex/credentials",
+      "destination": "/api/keys?route=webex-credentials"
     }
   ]
 }

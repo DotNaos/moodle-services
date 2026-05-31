@@ -35,6 +35,9 @@ func AuthQrExchange(w http.ResponseWriter, r *http.Request) {
 	case "1":
 		authClerkQRExchange(w, r)
 		return
+	case "login":
+		authClerkCredentialLogin(w, r)
+		return
 	case "session":
 		authClerkSession(w, r)
 		return
@@ -69,6 +72,38 @@ func authClerkQRExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	exchangeAndPersistQR(w, r, input, clerkUserID)
+}
+
+func authClerkCredentialLogin(w http.ResponseWriter, r *http.Request) {
+	clerkUserID, ok := authorizeInternalRequest(w, r, true)
+	if !ok {
+		return
+	}
+	var input contract.CredentialLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	username := strings.TrimSpace(input.Username)
+	if username == "" || strings.TrimSpace(input.Password) == "" {
+		svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "username and password are required"})
+		return
+	}
+
+	session, siteInfo, err := svc.MobileSessionFromCredentials(r.Context(), svc.WebexCredentials{
+		Username: username,
+		Password: input.Password,
+	})
+	if err != nil {
+		svc.WriteError(w, err)
+		return
+	}
+	response, err := persistMobileSession(r, session, siteInfo.UserName, clerkUserID, "Web credential login key")
+	if err != nil {
+		svc.WriteError(w, err)
+		return
+	}
+	svc.WriteJSON(w, http.StatusOK, response)
 }
 
 func authClerkSession(w http.ResponseWriter, r *http.Request) {
@@ -129,41 +164,44 @@ func exchangeAndPersistQR(w http.ResponseWriter, r *http.Request, input contract
 	}
 	session := svc.MobileSessionFromToken(token)
 	session.SchoolID = svc.ActiveSchoolID
-	client, err := svc.NewMobileClient(session, session.ResolvedSchoolID())
+	response, err := persistMobileSession(r, session, input.Name, clerkUserID, "Initial API key")
 	if err != nil {
 		svc.WriteError(w, err)
 		return
+	}
+	svc.WriteJSON(w, http.StatusOK, response)
+}
+
+func persistMobileSession(r *http.Request, session svc.MobileSession, displayNameFallback string, clerkUserID string, keyName string) (contract.QRExchangeResponse, error) {
+	client, err := svc.NewMobileClient(session, session.ResolvedSchoolID())
+	if err != nil {
+		return contract.QRExchangeResponse{}, err
 	}
 	siteInfo, err := client.FetchMobileSiteInfo()
 	if err != nil {
-		svc.WriteError(w, err)
-		return
+		return contract.QRExchangeResponse{}, err
 	}
 	sessionData, err := json.Marshal(session)
 	if err != nil {
-		svc.WriteError(w, err)
-		return
+		return contract.QRExchangeResponse{}, err
 	}
 	cfg := svc.LoadServerEnv()
 	box, err := svc.EncryptionBox(cfg)
 	if err != nil {
-		svc.WriteError(w, err)
-		return
+		return contract.QRExchangeResponse{}, err
 	}
 	encryptedSession, err := box.EncryptString(string(sessionData))
 	if err != nil {
-		svc.WriteError(w, err)
-		return
+		return contract.QRExchangeResponse{}, err
 	}
 	st, err := svc.OpenStoreFromEnv(cfg)
 	if err != nil {
-		svc.WriteError(w, err)
-		return
+		return contract.QRExchangeResponse{}, err
 	}
 	defer st.Close()
 	displayName := strings.TrimSpace(siteInfo.UserName)
 	if displayName == "" {
-		displayName = strings.TrimSpace(input.Name)
+		displayName = strings.TrimSpace(displayNameFallback)
 	}
 	user, err := st.UpsertMoodleAccount(r.Context(), svc.UpsertMoodleAccountInput{
 		SiteURL:                    session.SiteURL,
@@ -174,20 +212,17 @@ func exchangeAndPersistQR(w http.ResponseWriter, r *http.Request, input contract
 		EncryptedMobileSessionJSON: encryptedSession,
 	})
 	if err != nil {
-		svc.WriteError(w, err)
-		return
+		return contract.QRExchangeResponse{}, err
 	}
 	apiKey, err := svc.GenerateAPIKey()
 	if err != nil {
-		svc.WriteError(w, err)
-		return
+		return contract.QRExchangeResponse{}, err
 	}
-	record, err := st.CreateAPIKey(r.Context(), user.ID, "Initial API key", apiKey, cfg.HashSecret, []string{"moodle:read", "pdf:read", "calendar:read"})
+	record, err := st.CreateAPIKey(r.Context(), user.ID, keyName, apiKey, cfg.HashSecret, []string{"moodle:read", "pdf:read", "calendar:read"})
 	if err != nil {
-		svc.WriteError(w, err)
-		return
+		return contract.QRExchangeResponse{}, err
 	}
-	svc.WriteJSON(w, http.StatusOK, contract.QRExchangeResponse{User: user, APIKey: apiKey, APIKeyRecord: record})
+	return contract.QRExchangeResponse{User: user, APIKey: apiKey, APIKeyRecord: record}, nil
 }
 
 const mobileBridgeTTL = 10 * time.Minute

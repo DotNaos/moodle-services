@@ -17,6 +17,11 @@ type QRExchangeRequest struct {
 	Name string `json:"name,omitempty"`
 }
 
+type CredentialLoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 type QRExchangeResponse struct {
 	User         store.User         `json:"user"`
 	APIKey       string             `json:"apiKey"`
@@ -66,10 +71,28 @@ type MaterialsResponse struct {
 	Materials []moodle.Resource `json:"materials"`
 }
 
+type CalendarEventsResponse struct {
+	Events []moodle.CalendarEvent `json:"events"`
+}
+
 type MaterialTextResponse struct {
 	Document moodleservice.FetchDocument `json:"document"`
 }
 
 type SearchResponse struct {
 	Results []moodleservice.SearchResult `json:"results"`
+}
+
+type WebexCredentialsRequest struct {
+	CourseID string `json:"courseId,omitempty"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type WebexCredentialsResponse struct {
+	SavedSession bool `json:"savedSession"`
+}
+
+type WebexRecordingsResponse struct {
+	Recordings []moodleservice.WebexRecording `json:"recordings"`
 }

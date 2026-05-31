@@ -1,6 +1,7 @@
 package moodleservices
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/DotNaos/moodle-services/internal/auth"
@@ -24,6 +25,10 @@ type (
 	APIKeyRecord                      = store.APIKeyRecord
 	Box                               = appcrypto.Box
 	DataClient                        = moodleservice.DataClient
+	LoginOptions                      = moodle.LoginOptions
+	LoginResult                       = moodle.LoginResult
+	MobileLaunchOptions               = moodle.MobileLaunchOptions
+	MobileLaunchResult                = moodle.MobileLaunchResult
 	MobileLaunchToken                 = moodle.MobileLaunchToken
 	MobileLaunchURL                   = moodle.MobileLaunchURL
 	MobileClient                      = moodle.MobileClient
@@ -41,6 +46,8 @@ type (
 	CodexStateSnapshot                = store.CodexStateSnapshot
 	CodexStateSnapshotData            = store.CodexStateSnapshotData
 	CreateCodexStateSnapshotInput     = store.CreateCodexStateSnapshotInput
+	UpsertWebexSessionInput           = store.UpsertWebexSessionInput
+	WebexCredentials                  = moodleservice.WebexCredentials
 	MobileBridgeRequest               = store.MobileBridgeRequest
 	Service                           = moodleservice.Service
 	Store                             = store.Store
@@ -102,6 +109,26 @@ func ParseMobileLaunchCallback(raw string) (MobileLaunchToken, error) {
 
 func MobileTokenFromLaunch(siteURL string, launch MobileLaunchToken) MobileToken {
 	return moodle.MobileTokenFromLaunch(siteURL, launch)
+}
+
+func LoginWithPlaywright(options LoginOptions) (LoginResult, error) {
+	return moodle.LoginWithPlaywright(options)
+}
+
+func LaunchMobileLoginWithSession(options MobileLaunchOptions) (MobileLaunchResult, error) {
+	return moodle.LaunchMobileLoginWithSession(options)
+}
+
+func FetchMobileSiteInfo(token MobileToken) (moodle.MobileSiteInfo, error) {
+	return moodle.FetchMobileSiteInfo(token)
+}
+
+func GetDefaultSchool() moodle.SchoolConfig {
+	return moodle.GetDefaultSchool()
+}
+
+func MobileSessionFromCredentials(ctx context.Context, credentials WebexCredentials) (MobileSession, moodle.MobileSiteInfo, error) {
+	return moodleservice.MobileSessionFromCredentials(ctx, credentials)
 }
 
 func NewMobileClient(session MobileSession, schoolID string) (*MobileClient, error) {

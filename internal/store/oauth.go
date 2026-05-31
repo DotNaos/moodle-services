@@ -132,12 +132,12 @@ func (s *Store) MoodleCredentialsForUserID(ctx context.Context, userID string) (
 	var out MoodleCredentials
 	out.UserID = userID
 	err := s.db.QueryRowContext(ctx, `
-		select encrypted_mobile_session_json
+		select encrypted_mobile_session_json, coalesce(encrypted_webex_session_json, '')
 		from moodle_accounts
 		where user_id = $1
 		order by updated_at desc
 		limit 1
-	`, userID).Scan(&out.EncryptedMobileSessionJSON)
+	`, userID).Scan(&out.EncryptedMobileSessionJSON, &out.EncryptedWebexSessionJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return MoodleCredentials{}, fmt.Errorf("no Moodle account is connected for this user")
 	}
