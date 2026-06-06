@@ -20,6 +20,14 @@ import (
 
 var reOCRPageSuffix = regexp.MustCompile(`-(\d+)\.png$`)
 
+type PDFTextExtractionOptions struct {
+	UseVision          bool
+	VisionModel        string
+	VisionMaxPages     int
+	VisionDPI          int
+	VisionCodexCommand string
+}
+
 func ExtractPDFText(data []byte) (string, error) {
 	nativeText, nativeErr := extractPDFTextNative(data)
 	nativeText = strings.TrimSpace(nativeText)
@@ -40,6 +48,13 @@ func ExtractPDFText(data []byte) (string, error) {
 		return "", nativeErr
 	}
 	return nativeText, nil
+}
+
+func ExtractPDFTextWithOptions(data []byte, options PDFTextExtractionOptions) (string, error) {
+	if options.UseVision {
+		return extractPDFTextWithCodexVision(data, options)
+	}
+	return ExtractPDFText(data)
 }
 
 func extractPDFTextNative(data []byte) (string, error) {

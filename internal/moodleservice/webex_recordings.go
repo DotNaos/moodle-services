@@ -20,6 +20,8 @@ type WebexRecording struct {
 	RecordingDate   string `json:"recordingDate"`
 	RecordingName   string `json:"recordingName"`
 	StreamURL       string `json:"streamUrl"`
+	AudioURL        string `json:"audioUrl,omitempty"`
+	TranscriptURL   string `json:"transcriptUrl,omitempty"`
 	SourceURL       string `json:"sourceUrl,omitempty"`
 	RecordingUUID   string `json:"recordingUuid"`
 	CoverURL        string `json:"coverUrl,omitempty"`
@@ -170,11 +172,15 @@ func recordingFromWebexItem(ctx context.Context, browser *webBrowser, item map[s
 	uuid := nonEmpty(stringValue(item, "recordUUID", "recordUuid", "record_uuid", "recordingUuid", "recording_uuid", "uuid"), extractRecordUUID(sourceURL))
 	password := stringValue(item, "accessPwd", "password", "recordingPassword")
 	streamURL := ""
+	audioURL := ""
+	transcriptURL := ""
 	coverURL := ""
 	for _, candidate := range uniqueNonEmpty(uuid, stringValue(item, "id", "recordingId", "record_id")) {
 		info, err := fetchStreamInfo(ctx, browser, candidate, password, csrf)
 		if err == nil {
 			streamURL = streamURLFromInfo(info)
+			audioURL = audioURLFromInfo(info)
+			transcriptURL = transcriptURLFromInfo(info)
 			coverURL = coverURLFromInfo(info)
 			uuid = candidate
 			break
@@ -194,6 +200,8 @@ func recordingFromWebexItem(ctx context.Context, browser *webBrowser, item map[s
 			info, err := fetchStreamInfo(ctx, browser, candidate, password, csrf)
 			if err == nil {
 				streamURL = streamURLFromInfo(info)
+				audioURL = audioURLFromInfo(info)
+				transcriptURL = transcriptURLFromInfo(info)
 				coverURL = coverURLFromInfo(info)
 				uuid = candidate
 				break
@@ -205,6 +213,8 @@ func recordingFromWebexItem(ctx context.Context, browser *webBrowser, item map[s
 		RecordingDate:   deriveRecordingDate(name, stringValue(item, "created_at", "createTime", "gmtCreateTime")),
 		RecordingName:   name,
 		StreamURL:       streamURL,
+		AudioURL:        audioURL,
+		TranscriptURL:   transcriptURL,
 		SourceURL:       sourceURL,
 		RecordingUUID:   nonEmpty(uuid, sourceURL, name),
 		CoverURL:        coverURL,
@@ -374,6 +384,32 @@ func streamURLFromInfo(info map[string]any) string {
 	)
 }
 
+func audioURLFromInfo(info map[string]any) string {
+	return nonEmpty(firstPath(info,
+		[]string{"downloadRecordingInfo", "downloadInfo", "mp3URL"},
+		[]string{"downloadInfo", "mp3URL"},
+		[]string{"downloadRecordingInfo", "downloadInfo", "audioURL"},
+		[]string{"downloadInfo", "audioURL"},
+		[]string{"downloadRecordingInfo", "downloadInfo", "m4aURL"},
+		[]string{"downloadInfo", "m4aURL"},
+		[]string{"downloadRecordingInfo", "downloadInfo", "audioDownloadURL"},
+		[]string{"downloadInfo", "audioDownloadURL"},
+	), findURLByHint(info, []string{"mp3", "m4a", "audio"}, []string{".mp3", ".m4a", "audio"}))
+}
+
+func transcriptURLFromInfo(info map[string]any) string {
+	return nonEmpty(firstPath(info,
+		[]string{"downloadRecordingInfo", "downloadInfo", "transcriptURL"},
+		[]string{"downloadInfo", "transcriptURL"},
+		[]string{"downloadRecordingInfo", "downloadInfo", "vttURL"},
+		[]string{"downloadInfo", "vttURL"},
+		[]string{"downloadRecordingInfo", "downloadInfo", "captionURL"},
+		[]string{"downloadInfo", "captionURL"},
+		[]string{"downloadRecordingInfo", "downloadInfo", "closedCaptionURL"},
+		[]string{"downloadInfo", "closedCaptionURL"},
+	), findURLByHint(info, []string{"transcript", "caption", "vtt", "subtitle"}, []string{".vtt", ".srt", "transcript", "caption"}))
+}
+
 func coverURLFromInfo(info map[string]any) string {
 	return firstPath(info,
 		[]string{"downloadRecordingInfo", "downloadInfo", "playerCoverURL"},
@@ -396,6 +432,48 @@ func firstPath(root map[string]any, paths ...[]string) string {
 		}
 		if value, ok := current.(string); ok && strings.TrimSpace(value) != "" {
 			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func findURLByHint(root any, keyHints []string, valueHints []string) string {
+	return findURLByHintAt(root, "", keyHints, valueHints, 0)
+}
+
+func findURLByHintAt(root any, key string, keyHints []string, valueHints []string, depth int) string {
+	if depth > 8 {
+		return ""
+	}
+	switch typed := root.(type) {
+	case map[string]any:
+		for childKey, value := range typed {
+			if found := findURLByHintAt(value, childKey, keyHints, valueHints, depth+1); found != "" {
+				return found
+			}
+		}
+	case []any:
+		for _, value := range typed {
+			if found := findURLByHintAt(value, key, keyHints, valueHints, depth+1); found != "" {
+				return found
+			}
+		}
+	case string:
+		value := strings.TrimSpace(typed)
+		if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
+			return ""
+		}
+		lowerKey := strings.ToLower(key)
+		lowerValue := strings.ToLower(value)
+		for _, hint := range keyHints {
+			if strings.Contains(lowerKey, strings.ToLower(hint)) {
+				return value
+			}
+		}
+		for _, hint := range valueHints {
+			if strings.Contains(lowerValue, strings.ToLower(hint)) {
+				return value
+			}
 		}
 	}
 	return ""

@@ -69,6 +69,18 @@ func codexStateCreate(w http.ResponseWriter, r *http.Request, clerkUserID string
 		svc.WriteError(w, err)
 		return
 	}
+	quotaBytes, err := store.EffectiveCodexStateQuotaBytes(r.Context(), user.ID, cfg.CodexStateUserQuotaBytes)
+	if err != nil {
+		svc.WriteError(w, err)
+		return
+	}
+	if quotaBytes > 0 && int64(len(zipData)) > quotaBytes {
+		svc.WriteJSON(w, http.StatusRequestEntityTooLarge, map[string]any{
+			"error":      "Codex state snapshot exceeds this user's storage quota.",
+			"quotaBytes": quotaBytes,
+		})
+		return
+	}
 	box, err := svc.EncryptionBox(cfg)
 	if err != nil {
 		svc.WriteError(w, err)
@@ -88,6 +100,7 @@ func codexStateCreate(w http.ResponseWriter, r *http.Request, clerkUserID string
 		ZipSHA256:      hex.EncodeToString(hash[:]),
 		ZipSizeBytes:   len(zipData),
 		Metadata:       input.Metadata,
+		UserQuotaBytes: quotaBytes,
 	})
 	if err != nil {
 		svc.WriteError(w, err)

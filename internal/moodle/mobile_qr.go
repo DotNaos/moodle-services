@@ -49,7 +49,7 @@ type MobileCourse struct {
 	ID            int                    `json:"id"`
 	FullName      string                 `json:"fullname"`
 	ShortName     string                 `json:"shortname"`
-	Visible       int                    `json:"visible"`
+	Visible       any                    `json:"visible"`
 	CategoryID    int                    `json:"category"`
 	CourseImage   string                 `json:"courseimage"`
 	OverviewFiles []MobileCourseOverview `json:"overviewfiles"`

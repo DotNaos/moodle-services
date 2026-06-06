@@ -11,6 +11,8 @@ import (
 var (
 	trailingSemesterPattern   = regexp.MustCompile(`(?i)\s+\b(?:FS|HS)\d{2}\b\s*$`)
 	trailingCourseCodePattern = regexp.MustCompile(`(?i)\s+\(([a-z]{2,}[a-z0-9]*-[a-z0-9-]+)\)\s*$`)
+	courseListItemPattern     = regexp.MustCompile(`(?is)<li[^>]*\bdata-course-id=["']?(\d+)["']?[^>]*>(.*?)</li>`)
+	courseListImagePattern    = regexp.MustCompile(`(?is)background-image\s*:\s*url\((.*?)\)`)
 )
 
 type Course struct {
@@ -112,19 +114,85 @@ func (c *Client) FetchCourses() ([]Course, error) {
 		}
 	}
 
+	courseListImages := map[int]string{}
+	if hasMissingCourseImages(filtered) {
+		if images, err := c.FetchCourseListImages(); err == nil {
+			courseListImages = images
+		}
+	}
+
 	courses := make([]Course, 0, len(filtered))
 	for _, course := range filtered {
+		heroImage := strings.TrimSpace(course.CourseImage)
+		if heroImage == "" {
+			heroImage = courseListImages[course.ID]
+		}
+
 		courses = append(courses, Course{
 			ID:        course.ID,
 			Fullname:  DisplayCourseName(course.Fullname, c.School.CourseNamePatterns),
 			Shortname: course.Shortname,
 			Category:  course.CourseCategory,
 			ViewURL:   course.ViewURL,
-			HeroImage: course.CourseImage,
+			HeroImage: heroImage,
 		})
 	}
 
 	return courses, nil
+}
+
+func (c *Client) FetchCourseListImages() (map[int]string, error) {
+	body, err := c.FetchPage("/my/courses.php")
+	if err != nil {
+		return nil, err
+	}
+	return ExtractCourseListImages(body), nil
+}
+
+func ExtractCourseListImages(body string) map[int]string {
+	images := map[int]string{}
+	for _, match := range courseListItemPattern.FindAllStringSubmatch(body, -1) {
+		if len(match) < 3 {
+			continue
+		}
+		id := parseCourseID(match[1])
+		if id == 0 {
+			continue
+		}
+		image := extractCourseListItemImage(match[2])
+		if image != "" {
+			images[id] = image
+		}
+	}
+	return images
+}
+
+func hasMissingCourseImages(courses []moodleAPICourse) bool {
+	for _, course := range courses {
+		if strings.TrimSpace(course.CourseImage) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func extractCourseListItemImage(itemHTML string) string {
+	match := courseListImagePattern.FindStringSubmatch(itemHTML)
+	if len(match) < 2 {
+		return ""
+	}
+
+	image := strings.TrimSpace(html.UnescapeString(match[1]))
+	image = strings.Trim(image, `"'`)
+	return image
+}
+
+func parseCourseID(value string) int {
+	var id int
+	if _, err := fmt.Sscanf(value, "%d", &id); err != nil {
+		return 0
+	}
+	return id
 }
 
 func (c *Client) GetSesskey() (string, error) {

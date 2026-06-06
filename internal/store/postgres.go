@@ -217,6 +217,16 @@ func (s *Store) UserForAPIKey(ctx context.Context, key string, hashSecret []byte
 	return user, err
 }
 
+func (s *Store) UserByID(ctx context.Context, userID string) (User, error) {
+	var user User
+	err := s.db.QueryRowContext(ctx, `
+		select id::text, moodle_site_url, moodle_user_id, display_name
+		from users
+		where id = $1
+	`, userID).Scan(&user.ID, &user.MoodleSiteURL, &user.MoodleUserID, &user.DisplayName)
+	return user, err
+}
+
 func (s *Store) MoodleCredentialsForAPIKey(ctx context.Context, key string, hashSecret []byte) (MoodleCredentials, error) {
 	user, err := s.UserForAPIKey(ctx, key, hashSecret)
 	if err != nil {

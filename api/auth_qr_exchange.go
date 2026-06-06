@@ -28,6 +28,13 @@ func AuthQrExchange(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if r.URL.Query().Get("codex") == "admin" {
+		clerkUserID, ok := authorizeInternalRequest(w, r, true)
+		if ok {
+			codexstate.HandleAdmin(w, r, clerkUserID)
+		}
+		return
+	}
 	if !svc.AllowMethods(w, r, http.MethodPost) {
 		return
 	}

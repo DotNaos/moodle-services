@@ -12,6 +12,10 @@ import (
 )
 
 var printRaw bool
+var printPDFVision bool
+var printPDFVisionModel string
+var printPDFVisionMaxPages int
+var printPDFVisionCodexCommand string
 var printCurrentLectureWorkspace string
 var printCurrentLectureAt string
 
@@ -165,6 +169,10 @@ var printCurrentLectureCmd = &cobra.Command{
 
 func init() {
 	printCmd.PersistentFlags().BoolVar(&printRaw, "raw", false, "Print raw PDF text without cleanup")
+	printCmd.PersistentFlags().BoolVar(&printPDFVision, "pdf-vision", false, "Use Codex vision extraction for PDF pages")
+	printCmd.PersistentFlags().StringVar(&printPDFVisionModel, "pdf-vision-model", "", "Codex model for --pdf-vision (default: gpt-5.4-mini or MOODLE_PDF_VISION_MODEL)")
+	printCmd.PersistentFlags().IntVar(&printPDFVisionMaxPages, "pdf-vision-max-pages", 0, "Maximum PDF pages to process with --pdf-vision (0 means all pages)")
+	printCmd.PersistentFlags().StringVar(&printPDFVisionCodexCommand, "pdf-vision-codex-command", "", "Codex app-server command for --pdf-vision (default: Codex.app app-server, then codex on PATH)")
 	printCurrentLectureCmd.Flags().StringVar(&printCurrentLectureWorkspace, "workspace", "", "Optional workspace root for local file matching")
 	printCurrentLectureCmd.Flags().StringVar(&printCurrentLectureAt, "at", "", "Override current time for testing (RFC3339)")
 	printCmd.AddCommand(
@@ -240,7 +248,12 @@ func renderDownloadedResource(client *moodle.Client, url string, fileType string
 		return "", err
 	}
 	if fileType == "pdf" || strings.Contains(strings.ToLower(result.ContentType), "pdf") {
-		text, err := moodle.ExtractPDFText(result.Data)
+		text, err := moodle.ExtractPDFTextWithOptions(result.Data, moodle.PDFTextExtractionOptions{
+			UseVision:          printPDFVision,
+			VisionModel:        printPDFVisionModel,
+			VisionMaxPages:     printPDFVisionMaxPages,
+			VisionCodexCommand: printPDFVisionCodexCommand,
+		})
 		if err != nil {
 			return "", err
 		}

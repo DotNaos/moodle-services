@@ -97,3 +97,237 @@ func TestMobileClientFetchCoursesNormalizesCategoryAndHeroImage(t *testing.T) {
 		t.Fatalf("hero image not normalized: %#v", course)
 	}
 }
+
+func TestMobileClientFetchCoursesUsesOverviewSVGWhenCourseImageIsEmpty(t *testing.T) {
+	const svgDataURI = "data:image/svg+xml;base64,PHN2Zy8+"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		switch r.Form.Get("wsfunction") {
+		case "core_enrol_get_users_courses":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"id":        22577,
+					"fullname":  "Data Science und Informatik bei Banken (cds-305) FS26",
+					"shortname": "(cds-305) FS26",
+					"category":  1885,
+					"overviewfiles": []map[string]any{
+						{
+							"filename": "course.svg",
+							"fileurl":  svgDataURI,
+							"mimetype": "image/svg+xml",
+						},
+					},
+				},
+			})
+		case "core_course_get_categories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		default:
+			t.Fatalf("unexpected wsfunction %q", r.Form.Get("wsfunction"))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMobileClient(MobileSession{
+		SiteURL: server.URL,
+		UserID:  22388,
+		Token:   "test-token",
+	}, ActiveSchoolID)
+	if err != nil {
+		t.Fatalf("NewMobileClient: %v", err)
+	}
+
+	courses, err := client.FetchCourses()
+	if err != nil {
+		t.Fatalf("FetchCourses: %v", err)
+	}
+	if len(courses) != 1 {
+		t.Fatalf("expected one course, got %#v", courses)
+	}
+	if courses[0].HeroImage != svgDataURI {
+		t.Fatalf("expected SVG data URI from overviewfiles, got %q", courses[0].HeroImage)
+	}
+}
+
+func TestMobileClientFetchCoursesUsesTimelineImageWhenUserCourseImageIsEmpty(t *testing.T) {
+	const svgDataURI = "data:image/svg+xml;base64,PHN2Zy8+"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		switch r.Form.Get("wsfunction") {
+		case "core_enrol_get_users_courses":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"id":        22577,
+					"fullname":  "Data Science und Informatik bei Banken (cds-305) FS26",
+					"shortname": "(cds-305) FS26",
+					"category":  1885,
+				},
+			})
+		case "core_course_get_categories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		case "core_course_get_enrolled_courses_by_timeline_classification":
+			if r.Form.Get("classification") != "all" {
+				t.Fatalf("unexpected classification %q", r.Form.Get("classification"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"courses": []map[string]any{
+					{
+						"id":          22577,
+						"fullname":    "Data Science und Informatik bei Banken (cds-305) FS26",
+						"shortname":   "(cds-305) FS26",
+						"category":    1885,
+						"courseimage": svgDataURI,
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected wsfunction %q", r.Form.Get("wsfunction"))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMobileClient(MobileSession{
+		SiteURL: server.URL,
+		UserID:  22388,
+		Token:   "test-token",
+	}, ActiveSchoolID)
+	if err != nil {
+		t.Fatalf("NewMobileClient: %v", err)
+	}
+
+	courses, err := client.FetchCourses()
+	if err != nil {
+		t.Fatalf("FetchCourses: %v", err)
+	}
+	if len(courses) != 1 {
+		t.Fatalf("expected one course, got %#v", courses)
+	}
+	if courses[0].HeroImage != svgDataURI {
+		t.Fatalf("expected SVG data URI from timeline fallback, got %q", courses[0].HeroImage)
+	}
+}
+
+func TestMobileClientFetchCoursesPrefersTimelineSVGOverGeneratedCourseImage(t *testing.T) {
+	const svgDataURI = "data:image/svg+xml;base64,PHN2Zy8+"
+	const generatedSVG = "https://moodle.fhgr.ch/pluginfile.php/1267822/course/generated/course.svg"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		switch r.Form.Get("wsfunction") {
+		case "core_enrol_get_users_courses":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"id":          22577,
+					"fullname":    "Data Science und Informatik bei Banken (cds-305) FS26",
+					"shortname":   "(cds-305) FS26",
+					"category":    1885,
+					"courseimage": generatedSVG,
+				},
+			})
+		case "core_course_get_categories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		case "core_course_get_enrolled_courses_by_timeline_classification":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"courses": []map[string]any{
+					{
+						"id":          22577,
+						"fullname":    "Data Science und Informatik bei Banken (cds-305) FS26",
+						"shortname":   "(cds-305) FS26",
+						"category":    1885,
+						"visible":     true,
+						"courseimage": svgDataURI,
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected wsfunction %q", r.Form.Get("wsfunction"))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMobileClient(MobileSession{
+		SiteURL: server.URL,
+		UserID:  22388,
+		Token:   "test-token",
+	}, ActiveSchoolID)
+	if err != nil {
+		t.Fatalf("NewMobileClient: %v", err)
+	}
+
+	courses, err := client.FetchCourses()
+	if err != nil {
+		t.Fatalf("FetchCourses: %v", err)
+	}
+	if len(courses) != 1 {
+		t.Fatalf("expected one course, got %#v", courses)
+	}
+	if courses[0].HeroImage != svgDataURI {
+		t.Fatalf("expected timeline SVG data URI to replace generated SVG URL, got %q", courses[0].HeroImage)
+	}
+}
+
+func TestMobileClientFetchCoursesUsesCourseDetailImageWhenListsAreEmpty(t *testing.T) {
+	const svgDataURI = "data:image/svg+xml;base64,PHN2Zy8+"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		switch r.Form.Get("wsfunction") {
+		case "core_enrol_get_users_courses":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"id":        22577,
+					"fullname":  "Data Science und Informatik bei Banken (cds-305) FS26",
+					"shortname": "(cds-305) FS26",
+					"category":  1885,
+				},
+			})
+		case "core_course_get_categories":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		case "core_course_get_enrolled_courses_by_timeline_classification":
+			_ = json.NewEncoder(w).Encode(map[string]any{"courses": []map[string]any{}})
+		case "core_course_get_courses_by_field":
+			if r.Form.Get("field") != "id" || r.Form.Get("value") != "22577" {
+				t.Fatalf("unexpected course detail query field=%q value=%q", r.Form.Get("field"), r.Form.Get("value"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"courses": []map[string]any{
+					{
+						"id":          22577,
+						"fullname":    "Data Science und Informatik bei Banken (cds-305) FS26",
+						"shortname":   "(cds-305) FS26",
+						"category":    1885,
+						"courseimage": svgDataURI,
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected wsfunction %q", r.Form.Get("wsfunction"))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewMobileClient(MobileSession{
+		SiteURL: server.URL,
+		UserID:  22388,
+		Token:   "test-token",
+	}, ActiveSchoolID)
+	if err != nil {
+		t.Fatalf("NewMobileClient: %v", err)
+	}
+
+	courses, err := client.FetchCourses()
+	if err != nil {
+		t.Fatalf("FetchCourses: %v", err)
+	}
+	if len(courses) != 1 {
+		t.Fatalf("expected one course, got %#v", courses)
+	}
+	if courses[0].HeroImage != svgDataURI {
+		t.Fatalf("expected SVG data URI from course detail fallback, got %q", courses[0].HeroImage)
+	}
+}

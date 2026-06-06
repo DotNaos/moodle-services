@@ -23,6 +23,7 @@ const DefaultMobileLaunchScheme = moodle.DefaultMobileLaunchScheme
 
 type (
 	APIKeyRecord                      = store.APIKeyRecord
+	AdminUser                         = store.AdminUser
 	Box                               = appcrypto.Box
 	DataClient                        = moodleservice.DataClient
 	LoginOptions                      = moodle.LoginOptions
@@ -48,6 +49,7 @@ type (
 	CreateCodexStateSnapshotInput     = store.CreateCodexStateSnapshotInput
 	UpsertWebexSessionInput           = store.UpsertWebexSessionInput
 	WebexCredentials                  = moodleservice.WebexCredentials
+	WebexRecording                    = moodleservice.WebexRecording
 	MobileBridgeRequest               = store.MobileBridgeRequest
 	Service                           = moodleservice.Service
 	Store                             = store.Store

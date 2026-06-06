@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -30,6 +31,7 @@ type CreateCodexStateSnapshotInput struct {
 	ZipSHA256      string
 	ZipSizeBytes   int
 	Metadata       map[string]any
+	UserQuotaBytes int64
 }
 
 type CodexStateSnapshotData struct {
@@ -42,6 +44,9 @@ func (s *Store) CreateCodexStateSnapshot(ctx context.Context, input CreateCodexS
 	if input.StorageBackend == "" {
 		input.StorageBackend = "postgres"
 	}
+	if input.UserQuotaBytes > 0 && int64(input.ZipSizeBytes) > input.UserQuotaBytes {
+		return CodexStateSnapshot{}, fmt.Errorf("codex state snapshot exceeds user quota")
+	}
 	if input.Metadata == nil {
 		input.Metadata = map[string]any{}
 	}
@@ -49,8 +54,13 @@ func (s *Store) CreateCodexStateSnapshot(ctx context.Context, input CreateCodexS
 	if err != nil {
 		return CodexStateSnapshot{}, err
 	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return CodexStateSnapshot{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
 	var snapshot CodexStateSnapshot
-	err = s.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		insert into codex_state_snapshots (
 			user_id, kind, storage_backend, storage_account_id, object_key, encrypted_zip, zip_sha256, zip_size_bytes, metadata
 		)
@@ -68,7 +78,52 @@ func (s *Store) CreateCodexStateSnapshot(ctx context.Context, input CreateCodexS
 			newJSONMapScanner(&snapshot.Metadata),
 			&snapshot.CreatedAt,
 		)
-	return snapshot, err
+	if err != nil {
+		return CodexStateSnapshot{}, err
+	}
+	if input.UserQuotaBytes > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			with ordered as (
+				select
+					id,
+					sum(zip_size_bytes) over (order by created_at desc, id desc) as running_bytes
+				from codex_state_snapshots
+				where user_id = $1
+			)
+			delete from codex_state_snapshots
+			where user_id = $1
+				and id in (
+					select id
+					from ordered
+					where running_bytes > $2
+				)
+		`, input.UserID, input.UserQuotaBytes); err != nil {
+			return CodexStateSnapshot{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return CodexStateSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func (s *Store) EffectiveCodexStateQuotaBytes(ctx context.Context, userID string, defaultQuotaBytes int64) (int64, error) {
+	var override sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		select codex_state_quota_bytes
+		from users
+		where id = $1
+	`, userID).Scan(&override)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	if override.Valid && override.Int64 > 0 {
+		return override.Int64, nil
+	}
+	return defaultQuotaBytes, nil
 }
 
 func (s *Store) LatestCodexStateSnapshot(ctx context.Context, userID string, kind string) (CodexStateSnapshotData, error) {

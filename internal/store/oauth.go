@@ -222,6 +222,14 @@ func (s *Store) MoodleCredentialsForOAuthAccessToken(ctx context.Context, token 
 	return s.MoodleCredentialsForUserID(ctx, accessToken.UserID)
 }
 
+func (s *Store) UserForOAuthAccessToken(ctx context.Context, token string, hashSecret []byte) (User, error) {
+	accessToken, err := s.OAuthAccessToken(ctx, token, hashSecret)
+	if err != nil {
+		return User{}, err
+	}
+	return s.UserByID(ctx, accessToken.UserID)
+}
+
 func (s *Store) createOAuthToken(ctx context.Context, table string, input CreateOAuthTokenInput) error {
 	_, err := s.db.ExecContext(ctx, `
 		insert into `+table+` (token_hash, user_id, client_id, resource, scope, expires_at)

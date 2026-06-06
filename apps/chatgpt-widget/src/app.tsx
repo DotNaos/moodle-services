@@ -1,5 +1,6 @@
 import { FileText } from "lucide-react";
 
+import { AdminDashboard } from "@/components/admin-dashboard";
 import { PDFViewer } from "@/components/pdf-viewer";
 import { Badge } from "@/components/ui/badge";
 import { useToolPayload } from "@/hooks/use-tool-payload";
@@ -7,6 +8,10 @@ import type { MoodleData, MoodleDocument, WidgetMetadata } from "@/types/openai"
 
 export function App() {
   const { data, metadata } = useToolPayload();
+
+  if (isAdminView()) {
+    return <AdminDashboard />;
+  }
 
   return (
     <main className="grid h-screen min-h-[420px] grid-rows-[auto_1fr] overflow-hidden bg-muted/40 text-foreground">
@@ -107,4 +112,9 @@ function formatDate(value?: string) {
   if (!value) return "";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+}
+
+function isAdminView() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("view") === "admin";
 }
