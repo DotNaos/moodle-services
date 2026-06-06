@@ -1,6 +1,7 @@
 package moodle
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 )
@@ -69,4 +70,98 @@ func TestPageIndexFromPath(t *testing.T) {
 	if got := pageIndexFromPath("/tmp/page.png"); got <= 1000 {
 		t.Fatalf("expected large fallback index, got %d", got)
 	}
+}
+
+func TestCodexTurnTextCollectorUsesCompletedAgentMessage(t *testing.T) {
+	collector := codexTurnTextCollector{threadID: "thread-1", turnID: "turn-1"}
+	done, err := collector.handle(codexTestMessage("item/agentMessage/delta", map[string]any{
+		"threadId": "thread-1",
+		"turnId":   "turn-1",
+		"delta":    "partial ",
+	}))
+	if err != nil {
+		t.Fatalf("handle delta: %v", err)
+	}
+	if done {
+		t.Fatalf("did not expect delta to complete the turn")
+	}
+
+	done, err = collector.handle(codexTestMessage("item/completed", map[string]any{
+		"threadId": "thread-1",
+		"turnId":   "turn-1",
+		"item": map[string]any{
+			"type": "agentMessage",
+			"text": "final OCR text",
+		},
+	}))
+	if err != nil {
+		t.Fatalf("handle completed item: %v", err)
+	}
+	if done {
+		t.Fatalf("did not expect item completion to complete the turn")
+	}
+
+	done, err = collector.handle(codexTestMessage("turn/completed", map[string]any{
+		"threadId": "thread-1",
+		"turn": map[string]any{
+			"id": "turn-1",
+		},
+	}))
+	if err != nil {
+		t.Fatalf("handle turn completed: %v", err)
+	}
+	if !done {
+		t.Fatalf("expected matching turn to complete")
+	}
+
+	got, err := collector.text()
+	if err != nil {
+		t.Fatalf("collector text: %v", err)
+	}
+	if got != "final OCR text" {
+		t.Fatalf("expected completed text, got %q", got)
+	}
+}
+
+func TestCodexTurnTextCollectorFallsBackToDelta(t *testing.T) {
+	collector := codexTurnTextCollector{threadID: "thread-1", turnID: "turn-1"}
+	for _, delta := range []string{"first", " second"} {
+		_, err := collector.handle(codexTestMessage("item/agentMessage/delta", map[string]any{
+			"threadId": "thread-1",
+			"turnId":   "turn-1",
+			"delta":    delta,
+		}))
+		if err != nil {
+			t.Fatalf("handle delta: %v", err)
+		}
+	}
+	got, err := collector.text()
+	if err != nil {
+		t.Fatalf("collector text: %v", err)
+	}
+	if got != "first second" {
+		t.Fatalf("expected delta text, got %q", got)
+	}
+}
+
+func TestCodexTurnTextCollectorError(t *testing.T) {
+	collector := codexTurnTextCollector{threadID: "thread-1", turnID: "turn-1"}
+	_, err := collector.handle(codexTestMessage("error", map[string]any{
+		"threadId": "thread-1",
+		"turnId":   "turn-1",
+		"error": map[string]any{
+			"message": "bad model",
+		},
+	}))
+	if err == nil {
+		t.Fatalf("expected codex error notification to fail")
+	}
+}
+
+func codexTestMessage(method string, params any) codexRPCMessage {
+	body, err := json.Marshal(params)
+	if err != nil {
+		panic(err)
+	}
+	return codexRPCMessage{Method: method, Params: body}
 }

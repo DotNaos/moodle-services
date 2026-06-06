@@ -13,6 +13,13 @@ Initial storage model:
 - Store the encrypted zip in Postgres for the first implementation.
 - Store only compressed runtime state, not large Moodle PDFs or generated
   exports.
+- Limit each user's total stored Codex snapshots with
+  `CODEX_STATE_USER_QUOTA_BYTES`. The default is 128 MiB per user. When a new
+  snapshot is saved, older snapshots for that user are pruned until the total is
+  back under the quota.
+- Admins can set a per-user Codex state quota override up to 5 GiB. Bootstrap
+  the first admin with `MOODLE_ADMIN_CLERK_USER_IDS`, using a comma-separated
+  list of Clerk user IDs.
 - Use `kind` to separate state:
   - `codex-auth`: Codex auth files created by the ChatGPT/Codex login flow.
   - `codex-session`: Codex session files.
@@ -53,14 +60,28 @@ across browser sessions or sandbox restarts.
 
 Current internal API:
 
-- `POST /api/auth/clerk/codex/state`
+- `POST /api/auth/qr/exchange?codex=state`
   - Requires `X-Moodle-Internal-Secret` and `X-Clerk-User-Id`.
   - Body: `kind`, `zipBase64`, optional `metadata`.
   - Validates that the payload is a zip archive with safe relative paths.
   - Encrypts and stores the snapshot.
-- `GET /api/auth/clerk/codex/state?kind=codex-auth`
+- `GET /api/auth/qr/exchange?codex=state&kind=codex-auth`
   - Requires `X-Moodle-Internal-Secret` and `X-Clerk-User-Id`.
   - Returns the latest decrypted `zipBase64` for that user and kind.
+- `GET /api/auth/qr/exchange?codex=admin`
+  - Requires `X-Moodle-Internal-Secret` and an admin `X-Clerk-User-Id`.
+  - Returns users, current Codex state usage, effective quota, and quota
+    override state.
+- `PATCH /api/auth/qr/exchange?codex=admin`
+  - Requires `X-Moodle-Internal-Secret` and an admin `X-Clerk-User-Id`.
+  - Updates a user's `codexStateQuotaBytes`, resets it to the default, or
+    toggles that user's admin flag.
+
+Admin UI:
+
+- The React widget renders the quota dashboard with `?view=admin`.
+- Build it through the normal `build:chatgpt-widget` pipeline so the deployed
+  `pkg/chatgptapp/widget_dist.html` contains the admin view.
 
 This deliberately avoids a separate object storage dependency for now. If state
 grows beyond a few megabytes, move the encrypted zip bytes to B2 or another

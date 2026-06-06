@@ -112,11 +112,23 @@ func (c *MobileClient) FetchCourses() ([]Course, error) {
 		categoryNames = CategoryNameByID(categories)
 	}
 
+	timelineImages := map[int]string{}
+	if hasMissingMobileCourseImages(courses) {
+		if timelineCourses, err := c.FetchTimelineCourses(); err == nil {
+			timelineImages = mobileCourseImagesByID(timelineCourses, c.Session.Token)
+		}
+		c.fillMissingCourseImagesFromCourseDetails(courses, timelineImages)
+	}
+
 	result := make([]Course, 0, len(courses))
 	for _, course := range courses {
 		category := categoryNames[course.CategoryID]
 		if category == "" && course.CategoryID != 0 {
 			category = strconv.Itoa(course.CategoryID)
+		}
+		courseImage := mobileCourseImage(course, c.Session.Token)
+		if courseImage == "" || isMoodleGeneratedCourseSVG(courseImage) {
+			courseImage = timelineImages[course.ID]
 		}
 		result = append(result, Course{
 			ID:         course.ID,
@@ -125,10 +137,43 @@ func (c *MobileClient) FetchCourses() ([]Course, error) {
 			Category:   category,
 			CategoryID: course.CategoryID,
 			ViewURL:    strings.TrimRight(c.Session.SiteURL, "/") + "/course/view.php?id=" + strconv.Itoa(course.ID),
-			HeroImage:  course.CourseImage,
+			HeroImage:  courseImage,
 		})
 	}
 	return result, nil
+}
+
+func (c *MobileClient) FetchTimelineCourses() ([]MobileCourse, error) {
+	var response struct {
+		Courses []MobileCourse `json:"courses"`
+	}
+	values := url.Values{}
+	values.Set("classification", "all")
+	values.Set("sort", "fullname")
+	values.Set("limit", "0")
+	values.Set("offset", "0")
+	values.Set("customfieldname", "")
+	values.Set("customfieldvalue", "")
+	if err := c.callMobileAPI("core_course_get_enrolled_courses_by_timeline_classification", values, &response); err != nil {
+		return nil, err
+	}
+	return response.Courses, nil
+}
+
+func (c *MobileClient) FetchCourseByID(courseID int) (MobileCourse, error) {
+	var response struct {
+		Courses []MobileCourse `json:"courses"`
+	}
+	values := url.Values{}
+	values.Set("field", "id")
+	values.Set("value", strconv.Itoa(courseID))
+	if err := c.callMobileAPI("core_course_get_courses_by_field", values, &response); err != nil {
+		return MobileCourse{}, err
+	}
+	if len(response.Courses) == 0 {
+		return MobileCourse{}, fmt.Errorf("course %d not found", courseID)
+	}
+	return response.Courses[0], nil
 }
 
 func (c *MobileClient) FetchCategories() ([]Category, error) {
@@ -286,8 +331,74 @@ func firstMobileFileURL(module mobileModule, token string) string {
 	return ""
 }
 
+func mobileCourseImage(course MobileCourse, token string) string {
+	image := strings.TrimSpace(course.CourseImage)
+	if image != "" {
+		return image
+	}
+
+	for _, overviewFile := range course.OverviewFiles {
+		image = strings.TrimSpace(overviewFile.FileURL)
+		if image != "" {
+			break
+		}
+	}
+	if strings.HasPrefix(strings.ToLower(image), "data:") {
+		return image
+	}
+	return addMobileTokenToFileURL(image, token)
+}
+
+func mobileCourseImagesByID(courses []MobileCourse, token string) map[int]string {
+	images := map[int]string{}
+	for _, course := range courses {
+		image := mobileCourseImage(course, token)
+		if image != "" {
+			images[course.ID] = image
+		}
+	}
+	return images
+}
+
+func (c *MobileClient) fillMissingCourseImagesFromCourseDetails(courses []MobileCourse, images map[int]string) {
+	for _, course := range courses {
+		if images[course.ID] != "" {
+			continue
+		}
+		image := mobileCourseImage(course, "")
+		if image != "" && !isMoodleGeneratedCourseSVG(image) {
+			continue
+		}
+		detail, err := c.FetchCourseByID(course.ID)
+		if err != nil {
+			continue
+		}
+		image = mobileCourseImage(detail, c.Session.Token)
+		if image != "" {
+			images[course.ID] = image
+		}
+	}
+}
+
+func hasMissingMobileCourseImages(courses []MobileCourse) bool {
+	for _, course := range courses {
+		image := mobileCourseImage(course, "")
+		if image == "" || isMoodleGeneratedCourseSVG(image) {
+			return true
+		}
+	}
+	return false
+}
+
+func isMoodleGeneratedCourseSVG(image string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(image)), "/course/generated/course.svg")
+}
+
 func addMobileTokenToFileURL(fileURL string, token string) string {
 	if strings.TrimSpace(fileURL) == "" || strings.TrimSpace(token) == "" {
+		return fileURL
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(fileURL)), "data:") {
 		return fileURL
 	}
 	parsed, err := url.Parse(fileURL)

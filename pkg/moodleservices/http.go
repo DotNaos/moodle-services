@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/DotNaos/moodle-services/pkg/chatgptapp"
@@ -18,15 +19,21 @@ const (
 	EnvLegacyAPIKeyHash  = "MCP_API_KEY_HASH"
 	EnvCalendarURL       = "MOODLE_CALENDAR_URL"
 	EnvMobileSessionJSON = "MOODLE_MOBILE_SESSION_JSON"
+	EnvCodexStateQuota   = "CODEX_STATE_USER_QUOTA_BYTES"
+	EnvAdminClerkUsers   = "MOODLE_ADMIN_CLERK_USER_IDS"
 )
 
 const OAuthAccessTokenPrefix = "moodle_oauth_"
+const DefaultCodexStateUserQuotaBytes int64 = 128 * 1024 * 1024
+const MaxCodexStateUserQuotaBytes int64 = 5 * 1024 * 1024 * 1024
 
 type ServerEnv struct {
-	DatabaseURL   string
-	EncryptionKey string
-	HashSecret    []byte
-	CalendarURL   string
+	DatabaseURL              string
+	EncryptionKey            string
+	HashSecret               []byte
+	CalendarURL              string
+	CodexStateUserQuotaBytes int64
+	AdminClerkUserIDs        map[string]bool
 }
 
 func LoadServerEnv() ServerEnv {
@@ -36,11 +43,52 @@ func LoadServerEnv() ServerEnv {
 		hashSecret = encryptionKey
 	}
 	return ServerEnv{
-		DatabaseURL:   strings.TrimSpace(os.Getenv(EnvDatabaseURL)),
-		EncryptionKey: encryptionKey,
-		HashSecret:    []byte(hashSecret),
-		CalendarURL:   strings.TrimSpace(os.Getenv(EnvCalendarURL)),
+		DatabaseURL:              strings.TrimSpace(os.Getenv(EnvDatabaseURL)),
+		EncryptionKey:            encryptionKey,
+		HashSecret:               []byte(hashSecret),
+		CalendarURL:              strings.TrimSpace(os.Getenv(EnvCalendarURL)),
+		CodexStateUserQuotaBytes: parsePositiveInt64Env(EnvCodexStateQuota, DefaultCodexStateUserQuotaBytes),
+		AdminClerkUserIDs:        parseCSVSetEnv(EnvAdminClerkUsers),
 	}
+}
+
+func parsePositiveIntEnv(name string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func parsePositiveInt64Env(name string, fallback int64) int64 {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func parseCSVSetEnv(name string) map[string]bool {
+	out := map[string]bool{}
+	for _, part := range strings.Split(os.Getenv(name), ",") {
+		value := strings.TrimSpace(part)
+		if value != "" {
+			out[value] = true
+		}
+	}
+	return out
+}
+
+func (cfg ServerEnv) IsConfiguredAdminClerkUser(clerkUserID string) bool {
+	return cfg.AdminClerkUserIDs[strings.TrimSpace(clerkUserID)]
 }
 
 func OpenStoreFromEnv(cfg ServerEnv) (*Store, error) {
@@ -66,7 +114,12 @@ func AuthenticatedUser(r *http.Request, cfg ServerEnv) (*Store, User, string, er
 	if err != nil {
 		return nil, User{}, "", err
 	}
-	user, err := st.UserForAPIKey(r.Context(), apiKey, cfg.HashSecret)
+	var user User
+	if strings.HasPrefix(apiKey, OAuthAccessTokenPrefix) {
+		user, err = st.UserForOAuthAccessToken(r.Context(), apiKey, cfg.HashSecret)
+	} else {
+		user, err = st.UserForAPIKey(r.Context(), apiKey, cfg.HashSecret)
+	}
 	if err != nil {
 		_ = st.Close()
 		return nil, User{}, "", err
@@ -130,7 +183,13 @@ func ServiceForRequest(r *http.Request, cfg ServerEnv) (Service, func(), error) 
 			calendarURL = decrypted
 		}
 	}
-	return Service{Client: client, CalendarURL: calendarURL}, closeFn, nil
+	webexSessionJSON := ""
+	if credentials.EncryptedWebexSessionJSON != "" {
+		if decrypted, err := box.DecryptString(credentials.EncryptedWebexSessionJSON); err == nil {
+			webexSessionJSON = decrypted
+		}
+	}
+	return Service{Client: client, CalendarURL: calendarURL, WebexSessionJSON: webexSessionJSON}, closeFn, nil
 }
 
 func WriteJSON(w http.ResponseWriter, status int, payload any) {
@@ -168,6 +227,6 @@ func AllowMethods(w http.ResponseWriter, r *http.Request, methods ...string) boo
 
 func SetServiceCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "authorization, content-type, x-moodle-app-key")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "authorization, content-type, x-moodle-app-key, x-moodle-internal-secret, x-clerk-user-id")
 }

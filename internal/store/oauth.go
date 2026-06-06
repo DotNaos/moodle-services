@@ -132,12 +132,12 @@ func (s *Store) MoodleCredentialsForUserID(ctx context.Context, userID string) (
 	var out MoodleCredentials
 	out.UserID = userID
 	err := s.db.QueryRowContext(ctx, `
-		select encrypted_mobile_session_json
+		select encrypted_mobile_session_json, coalesce(encrypted_webex_session_json, '')
 		from moodle_accounts
 		where user_id = $1
 		order by updated_at desc
 		limit 1
-	`, userID).Scan(&out.EncryptedMobileSessionJSON)
+	`, userID).Scan(&out.EncryptedMobileSessionJSON, &out.EncryptedWebexSessionJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return MoodleCredentials{}, fmt.Errorf("no Moodle account is connected for this user")
 	}
@@ -220,6 +220,14 @@ func (s *Store) MoodleCredentialsForOAuthAccessToken(ctx context.Context, token 
 		return MoodleCredentials{}, err
 	}
 	return s.MoodleCredentialsForUserID(ctx, accessToken.UserID)
+}
+
+func (s *Store) UserForOAuthAccessToken(ctx context.Context, token string, hashSecret []byte) (User, error) {
+	accessToken, err := s.OAuthAccessToken(ctx, token, hashSecret)
+	if err != nil {
+		return User{}, err
+	}
+	return s.UserByID(ctx, accessToken.UserID)
 }
 
 func (s *Store) createOAuthToken(ctx context.Context, table string, input CreateOAuthTokenInput) error {

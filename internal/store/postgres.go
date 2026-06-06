@@ -30,6 +30,7 @@ type MoodleCredentials struct {
 	UserID                     string
 	EncryptedMobileSessionJSON string
 	EncryptedCalendarURL       string
+	EncryptedWebexSessionJSON  string
 	LegacyMobileSessionJSON    string
 	LegacyCalendarURL          string
 }
@@ -41,6 +42,11 @@ type UpsertMoodleAccountInput struct {
 	ClerkUserID                string
 	SchoolID                   string
 	EncryptedMobileSessionJSON string
+}
+
+type UpsertWebexSessionInput struct {
+	UserID                    string
+	EncryptedWebexSessionJSON string
 }
 
 type APIKeyRecord struct {
@@ -211,6 +217,16 @@ func (s *Store) UserForAPIKey(ctx context.Context, key string, hashSecret []byte
 	return user, err
 }
 
+func (s *Store) UserByID(ctx context.Context, userID string) (User, error) {
+	var user User
+	err := s.db.QueryRowContext(ctx, `
+		select id::text, moodle_site_url, moodle_user_id, display_name
+		from users
+		where id = $1
+	`, userID).Scan(&user.ID, &user.MoodleSiteURL, &user.MoodleUserID, &user.DisplayName)
+	return user, err
+}
+
 func (s *Store) MoodleCredentialsForAPIKey(ctx context.Context, key string, hashSecret []byte) (MoodleCredentials, error) {
 	user, err := s.UserForAPIKey(ctx, key, hashSecret)
 	if err != nil {
@@ -219,12 +235,12 @@ func (s *Store) MoodleCredentialsForAPIKey(ctx context.Context, key string, hash
 	var out MoodleCredentials
 	out.UserID = user.ID
 	err = s.db.QueryRowContext(ctx, `
-		select encrypted_mobile_session_json
+		select encrypted_mobile_session_json, coalesce(encrypted_webex_session_json, '')
 		from moodle_accounts
 		where user_id = $1
 		order by updated_at desc
 		limit 1
-	`, user.ID).Scan(&out.EncryptedMobileSessionJSON)
+	`, user.ID).Scan(&out.EncryptedMobileSessionJSON, &out.EncryptedWebexSessionJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return MoodleCredentials{}, fmt.Errorf("no Moodle account is connected for this user")
 	}
@@ -235,6 +251,40 @@ func (s *Store) MoodleCredentialsForAPIKey(ctx context.Context, key string, hash
 		select encrypted_url from calendar_subscriptions where user_id = $1 order by updated_at desc limit 1
 	`, user.ID).Scan(&out.EncryptedCalendarURL)
 	return out, nil
+}
+
+func (s *Store) UpsertWebexSession(ctx context.Context, input UpsertWebexSessionInput) error {
+	if input.UserID == "" {
+		return fmt.Errorf("user id is required")
+	}
+	if input.EncryptedWebexSessionJSON == "" {
+		return fmt.Errorf("encrypted webex session json is required")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		update moodle_accounts
+		set
+			encrypted_webex_session_json = $2,
+			webex_session_updated_at = now(),
+			updated_at = now()
+		where id = (
+			select id
+			from moodle_accounts
+			where user_id = $1
+			order by updated_at desc
+			limit 1
+		)
+	`, input.UserID, input.EncryptedWebexSessionJSON)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("no Moodle account is connected for this user")
+	}
+	return nil
 }
 
 func (s *Store) ListAPIKeys(ctx context.Context, userID string) ([]APIKeyRecord, error) {
