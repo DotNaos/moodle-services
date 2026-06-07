@@ -30,7 +30,7 @@ The raw OpenAPI document is available at:
 - `GET /api/courses/{courseID}/resources/{resourceID}/text`
   Returns extracted text for one file resource. Add `?raw=true` to skip PDF text cleanup.
 - `GET /api/courses/{courseID}/resources/{resourceID}/ocr`
-  Runs Docker-backed OCR for one PDF resource. Optional query parameters: `engine`, `out`, `format`, `timeout`, `docker-platform`, `gpu`, `formula`, `code`, `keepArtifacts`.
+  Runs a selectable PDF text/OCR engine for one PDF resource. `engine=pdftotext` runs locally; the other engines are Docker-backed. Optional query parameters: `engine`, `out`, `format`, `timeout`, `docker-platform`, `gpu`, `formula`, `code`, `keepArtifacts`.
 - `GET /api/courses/{courseID}/study-pipeline`
   Returns the Moodle-resource based study material plan for one course.
 - `POST /api/courses/{courseID}/study-pipeline`

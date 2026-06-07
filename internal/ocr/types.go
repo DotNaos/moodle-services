@@ -8,11 +8,13 @@ import (
 type Provider struct {
 	ID                  string   `json:"id"`
 	DisplayName         string   `json:"displayName"`
+	Runtime             string   `json:"runtime,omitempty"`
 	DockerImage         string   `json:"dockerImage"`
 	BuildContext        string   `json:"buildContext,omitempty"`
 	Dockerfile          string   `json:"dockerfile,omitempty"`
 	SupportsCPU         bool     `json:"supportsCpu"`
 	SupportsGPU         bool     `json:"supportsGpu"`
+	ExtractsImages      bool     `json:"extractsImages"`
 	DefaultTimeoutMs    int      `json:"defaultTimeoutMs"`
 	ExpectedOutputFiles []string `json:"expectedOutputFiles"`
 	EnabledByDefault    bool     `json:"enabledByDefault"`

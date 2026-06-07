@@ -39,11 +39,21 @@ func TestParseOutputReadsNormalizedFiles(t *testing.T) {
 
 func TestDetectWarnings(t *testing.T) {
 	result := RunResult{Engine: "docling", Markdown: "Formula not decoded", Images: []ImageArtifact{}}
-	warnings := DetectWarnings(result)
+	provider, _ := ProviderByID("docling")
+	warnings := DetectWarnings(provider, result)
 	for _, want := range []string{"empty or very short Markdown", "no images extracted", "output contains failed placeholder text"} {
 		if !containsString(warnings, want) {
 			t.Fatalf("expected warning %q in %#v", want, warnings)
 		}
+	}
+}
+
+func TestDetectWarningsSkipsImagesForTextOnlyProvider(t *testing.T) {
+	provider, _ := ProviderByID("pdftotext")
+	result := RunResult{Engine: "pdftotext", Markdown: strings.Repeat("text ", 30), Images: []ImageArtifact{}}
+	warnings := DetectWarnings(provider, result)
+	if containsString(warnings, "no images extracted") {
+		t.Fatalf("did not expect image warning for text-only provider: %#v", warnings)
 	}
 }
 

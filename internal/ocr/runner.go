@@ -24,7 +24,7 @@ func (r Runner) Run(ctx context.Context, pdfData []byte, filename string, opts O
 	progressf(opts, "resolved engines: %s", providerIDs(providers))
 	executor := r.Executor
 	if executor == nil {
-		executor = DockerExecutor{}
+		executor = DispatchExecutor{}
 	}
 	if strings.EqualFold(opts.Engine, EngineAll) && strings.TrimSpace(opts.OutputDir) == "" && !opts.KeepArtifacts {
 		return nil, fmt.Errorf("ocr engine all requires --out or --keep-artifacts")
@@ -70,7 +70,7 @@ func (r Runner) Run(ctx context.Context, pdfData []byte, filename string, opts O
 func (r Runner) runAll(ctx context.Context, providers []Provider, inputPath string, baseOutputDir string, opts Options) (RunAllResult, error) {
 	executor := r.Executor
 	if executor == nil {
-		executor = DockerExecutor{}
+		executor = DispatchExecutor{}
 	}
 	basename := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
 	root := filepath.Join(baseOutputDir, basename)
