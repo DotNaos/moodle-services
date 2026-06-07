@@ -33,6 +33,7 @@ type ServerOptions struct {
 	CommandRoutes  []CommandRoute
 	CommandRunner  CommandRunner
 	LogWriter      io.Writer
+	RequestTimeout time.Duration
 }
 
 // NewRouter builds a chi router exposing the REST API.
@@ -42,6 +43,11 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	}
 
 	router := chi.NewRouter()
+	requestTimeout := opts.RequestTimeout
+	if requestTimeout <= 0 {
+		requestTimeout = 30 * time.Minute
+	}
+
 	router.Use(
 		middleware.RequestID,
 		middleware.RealIP,
@@ -50,7 +56,7 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 			NoColor: true,
 		}),
 		middleware.Recoverer,
-		middleware.Timeout(60*time.Second),
+		middleware.Timeout(requestTimeout),
 	)
 
 	router.Get(openAPIPath, openAPIHandler(opts))

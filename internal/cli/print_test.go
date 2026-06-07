@@ -32,6 +32,53 @@ func TestPrintCommandArgsAllowCourseOutlineSelector(t *testing.T) {
 	}
 }
 
+func TestBuildPrintOCROptionsFromFlags(t *testing.T) {
+	oldEngine := printOCREngine
+	oldOut := printOCROutDir
+	oldFormat := printOCRFormat
+	oldKeep := printOCRKeepArtifacts
+	oldTimeout := printOCRTimeoutSeconds
+	oldPlatform := printOCRDockerPlatform
+	oldGPU := printOCRGPU
+	oldFormula := printOCRFormula
+	oldCode := printOCRCode
+	oldVerbose := printOCRVerbose
+	t.Cleanup(func() {
+		printOCREngine = oldEngine
+		printOCROutDir = oldOut
+		printOCRFormat = oldFormat
+		printOCRKeepArtifacts = oldKeep
+		printOCRTimeoutSeconds = oldTimeout
+		printOCRDockerPlatform = oldPlatform
+		printOCRGPU = oldGPU
+		printOCRFormula = oldFormula
+		printOCRCode = oldCode
+		printOCRVerbose = oldVerbose
+	})
+
+	printOCREngine = "all"
+	printOCROutDir = "/tmp/ocr"
+	printOCRFormat = "json"
+	printOCRKeepArtifacts = true
+	printOCRTimeoutSeconds = 900
+	printOCRDockerPlatform = "linux/amd64"
+	printOCRGPU = true
+	printOCRFormula = true
+	printOCRCode = true
+	printOCRVerbose = true
+
+	opts := buildPrintOCROptions()
+	if opts.Engine != "all" || opts.OutputDir != "/tmp/ocr" || opts.Timeout != 900*time.Second {
+		t.Fatalf("unexpected OCR options: %#v", opts)
+	}
+	if !opts.KeepArtifacts || !opts.GPU || !opts.Formula || !opts.Code || !opts.Verbose {
+		t.Fatalf("expected boolean OCR options to be true: %#v", opts)
+	}
+	if opts.DockerPlatform != "linux/amd64" {
+		t.Fatalf("unexpected docker platform: %#v", opts)
+	}
+}
+
 func TestRunPrintCoursePageWithClientReturnsCourseOutline(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

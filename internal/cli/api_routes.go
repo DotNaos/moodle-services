@@ -122,6 +122,59 @@ func buildAPICommandRoutes() []api.CommandRoute {
 			},
 		},
 		{
+			APIPath:     "/api/courses/{courseID}/resources/{resourceID}/ocr",
+			Method:      http.MethodGet,
+			CommandPath: []string{"print", "course"},
+			Summary:     "Run Docker OCR for a PDF resource",
+			Description: "Parses one Moodle PDF resource through a Docker-backed OCR/document parser. Docker is checked only when this endpoint is called.",
+			Arguments: func(r *http.Request, _ api.CommandRequest) ([]string, error) {
+				courseID := strings.TrimSpace(chi.URLParam(r, "courseID"))
+				resourceID := strings.TrimSpace(chi.URLParam(r, "resourceID"))
+				if courseID == "" {
+					return nil, fmt.Errorf("courseID is required")
+				}
+				if resourceID == "" {
+					return nil, fmt.Errorf("resourceID is required")
+				}
+				query := r.URL.Query()
+				engine := strings.TrimSpace(query.Get("engine"))
+				if engine == "" {
+					engine = "docling"
+				}
+				args := []string{courseID, resourceID, "--engine", engine}
+				for _, item := range []struct {
+					query string
+					flag  string
+				}{
+					{"out", "--out"},
+					{"format", "--format"},
+					{"timeout", "--timeout"},
+					{"dockerPlatform", "--docker-platform"},
+					{"docker-platform", "--docker-platform"},
+				} {
+					if value := strings.TrimSpace(query.Get(item.query)); value != "" {
+						args = append(args, item.flag, value)
+					}
+				}
+				for _, item := range []struct {
+					query string
+					flag  string
+				}{
+					{"keepArtifacts", "--keep-artifacts"},
+					{"keep-artifacts", "--keep-artifacts"},
+					{"gpu", "--gpu"},
+					{"formula", "--formula"},
+					{"code", "--code"},
+					{"verbose", "--verbose"},
+				} {
+					if queryBool(query.Get(item.query)) {
+						args = append(args, item.flag)
+					}
+				}
+				return args, nil
+			},
+		},
+		{
 			APIPath:     "/api/mobile/qr/inspect",
 			Method:      http.MethodGet,
 			CommandPath: []string{"mobile", "qr", "inspect"},

@@ -18,6 +18,7 @@ import (
 
 var serveAddr string
 var serveShutdownTimeout time.Duration
+var serveRequestTimeout time.Duration
 var serveSchool string
 var serveUsername string
 var servePassword string
@@ -56,9 +57,10 @@ var serveCmd = &cobra.Command{
 			ClientProvider: func() (api.Client, error) {
 				return ensureAPIClient()
 			},
-			CommandRoutes: buildAPICommandRoutes(),
-			CommandRunner: runAPICommand,
-			LogWriter:     cmd.ErrOrStderr(),
+			CommandRoutes:  buildAPICommandRoutes(),
+			CommandRunner:  runAPICommand,
+			LogWriter:      cmd.ErrOrStderr(),
+			RequestTimeout: serveRequestTimeout,
 		})
 		if err != nil {
 			_ = emitServeStatus(cmd, serveEvent{Type: "fatal", Addr: serveAddr, Error: err.Error()})
@@ -122,6 +124,7 @@ func init() {
 
 	serveCmd.Flags().StringVar(&serveAddr, "addr", defaultAddr, "Address to bind the API server to (e.g. :8080 or 127.0.0.1:8080)")
 	serveCmd.Flags().DurationVar(&serveShutdownTimeout, "shutdown-timeout", 10*time.Second, "Grace period for graceful shutdown")
+	serveCmd.Flags().DurationVar(&serveRequestTimeout, "request-timeout", 30*time.Minute, "Maximum duration for one API request")
 	serveCmd.Flags().StringVar(&serveSchool, "school", "", "School id override used for a fresh login. Only fhgr is currently active; multi-school support is not active")
 	serveCmd.Flags().StringVar(&serveUsername, "username", "", "Username/email used for a fresh login before starting the server")
 	serveCmd.Flags().StringVar(&servePassword, "password", "", "Password used for a fresh login before starting the server")

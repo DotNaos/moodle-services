@@ -13,8 +13,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -
 RUN go run github.com/playwright-community/playwright-go/cmd/playwright install chromium
 
 FROM debian:bookworm-slim
-# Install minimum system dependencies required by playwright/chromium
+# Install minimum system dependencies required by playwright/chromium and the Docker CLI used by OCR providers.
 RUN apt-get update && apt-get install -y ca-certificates \
+    docker.io \
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
