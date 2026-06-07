@@ -22,8 +22,6 @@ var serveRequestTimeout time.Duration
 var serveSchool string
 var serveUsername string
 var servePassword string
-var serveStudyWorkspace string
-var serveSkipSessionCheck bool
 
 type serveEvent struct {
 	Type   string `json:"type" yaml:"type"`
@@ -50,11 +48,9 @@ var serveCmd = &cobra.Command{
 		if err := emitServeStatus(cmd, serveEvent{Type: "starting", Addr: serveAddr}); err != nil {
 			return err
 		}
-		if !serveSkipSessionCheck {
-			if err := ensureServeSession(); err != nil {
-				_ = emitServeStatus(cmd, serveEvent{Type: "fatal", Addr: serveAddr, Error: err.Error()})
-				return markErrorEmitted(err)
-			}
+		if err := ensureServeSession(); err != nil {
+			_ = emitServeStatus(cmd, serveEvent{Type: "fatal", Addr: serveAddr, Error: err.Error()})
+			return markErrorEmitted(err)
 		}
 
 		router, err := api.NewRouter(api.ServerOptions{
@@ -65,7 +61,6 @@ var serveCmd = &cobra.Command{
 			CommandRunner:  runAPICommand,
 			LogWriter:      cmd.ErrOrStderr(),
 			RequestTimeout: serveRequestTimeout,
-			StudyWorkspace: serveStudyWorkspace,
 		})
 		if err != nil {
 			_ = emitServeStatus(cmd, serveEvent{Type: "fatal", Addr: serveAddr, Error: err.Error()})
@@ -133,8 +128,6 @@ func init() {
 	serveCmd.Flags().StringVar(&serveSchool, "school", "", "School id override used for a fresh login. Only fhgr is currently active; multi-school support is not active")
 	serveCmd.Flags().StringVar(&serveUsername, "username", "", "Username/email used for a fresh login before starting the server")
 	serveCmd.Flags().StringVar(&servePassword, "password", "", "Password used for a fresh login before starting the server")
-	serveCmd.Flags().StringVar(&serveStudyWorkspace, "study-workspace", "", "School workspace root used by study pipeline endpoints")
-	serveCmd.Flags().BoolVar(&serveSkipSessionCheck, "skip-session-check", false, "Start the API server without validating a Moodle session. Useful for local study pipeline review")
 
 	serveCmd.RegisterFlagCompletionFunc("school", completeSchoolIDs)
 }

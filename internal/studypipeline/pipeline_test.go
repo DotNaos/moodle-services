@@ -1,73 +1,47 @@
 package studypipeline
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/DotNaos/moodle-services/internal/moodle"
 )
 
-func TestScanDetectsCompleteCoursePipeline(t *testing.T) {
-	root := t.TempDir()
-	course := filepath.Join(root, "terms", "FS26", "courses", "high-performance-computing")
-	writeFile(t, filepath.Join(course, "README.md"), "# High Performance Computing\n")
-	writeFile(t, filepath.Join(course, ".raw", "Moodle.md"), "# Moodle\n")
-	writeFile(t, filepath.Join(course, ".raw", "materials.index.yaml"), "materials: []\n")
-	writeFile(t, filepath.Join(course, ".raw", "materials", "01", "deck.pdf"), "pdf")
-	writeFile(t, filepath.Join(course, ".extracted", "script", "Script.mdx"), "# Extracted\n")
-	writeFile(t, filepath.Join(course, ".extracted", "slides", "01.mdx"), "# Slide\n")
-	writeFile(t, filepath.Join(course, ".extracted", "tasks", "01-task.mdx"), "# Task\n")
-	writeFile(t, filepath.Join(course, ".extracted", "solutions", "01-solution.mdx"), "# Solution\n")
-	writeFile(t, filepath.Join(course, ".extracted", "slides", "01.assets", "image.png"), "png")
-	writeFile(t, filepath.Join(course, "script", "Script.mdx"), "# Script\n")
-	writeFile(t, filepath.Join(course, "tasks", "01-task.mdx"), "---\nsolution_status: \"moodle-solution-available\"\n---\n# Task\n")
-	writeFile(t, filepath.Join(course, "tasks", "solutions", "01-solution.mdx"), "# Solution\n")
+func TestBuildClassifiesAndLinksCourseMaterials(t *testing.T) {
+	payload := Build("22584", []moodle.Resource{
+		{ID: "1", Name: "01 Memory Hierarchy", FileType: "pdf", SectionID: "s1", SectionName: "Week 1"},
+		{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionID: "s1", SectionName: "Week 1"},
+		{ID: "3", Name: "Loesung Aufgabenblatt 01", FileType: "pdf", SectionID: "s1", SectionName: "Week 1"},
+		{ID: "4", Name: "Aufgabenblatt 02", FileType: "pdf", SectionID: "s2", SectionName: "Week 2"},
+	}, "created", time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC))
 
-	payload, err := Scan(Options{Workspace: root, Term: "FS26"})
-	if err != nil {
-		t.Fatalf("Scan: %v", err)
+	if payload.CourseID != "22584" || payload.Status != "created" {
+		t.Fatalf("unexpected payload identity: %#v", payload)
 	}
-	if payload.Summary.Courses != 1 {
-		t.Fatalf("expected one course, got %#v", payload.Summary)
+	if payload.Summary.Slides != 1 || payload.Summary.Tasks != 2 || payload.Summary.Solutions != 1 {
+		t.Fatalf("unexpected summary: %#v", payload.Summary)
 	}
-	got := payload.Courses[0]
-	if got.Status != "complete" {
-		t.Fatalf("expected complete status, got %q issues=%v", got.Status, got.Issues)
+	if payload.Summary.LinkedSolutions != 1 || payload.Summary.MissingSolutions != 1 {
+		t.Fatalf("unexpected solution summary: %#v", payload.Summary)
 	}
-	if got.Title != "High Performance Computing" {
-		t.Fatalf("unexpected title %q", got.Title)
+	if len(payload.TaskLinks) != 2 {
+		t.Fatalf("expected two task links, got %d", len(payload.TaskLinks))
 	}
-	if got.Raw.Materials.Files != 1 || got.Extracted.Assets != 1 || got.Curated.Solutions.Files != 1 {
-		t.Fatalf("unexpected counts: %#v", got)
+	if payload.TaskLinks[0].Solution == nil || payload.TaskLinks[0].Solution.ID != "3" {
+		t.Fatalf("expected first task to link solution 3, got %#v", payload.TaskLinks[0])
 	}
-	if got.Curated.SolutionStates["moodle-solution-available"] != 1 {
-		t.Fatalf("solution state not detected: %#v", got.Curated.SolutionStates)
+	if got := payload.MissingSolutions[0].ID; got != "4" {
+		t.Fatalf("expected task 4 to miss solution, got %q", got)
 	}
 }
 
-func TestScanReportsMissingCourseStages(t *testing.T) {
-	root := t.TempDir()
-	course := filepath.Join(root, "terms", "FS26", "courses", "empty-course")
-	writeFile(t, filepath.Join(course, "README.md"), "# Empty Course\n")
+func TestBuildRecognizesGermanUmlauts(t *testing.T) {
+	payload := Build("1", []moodle.Resource{
+		{ID: "1", Name: "Übung 03", FileType: "pdf"},
+		{ID: "2", Name: "Musterlösung 03", FileType: "pdf"},
+	}, "", time.Unix(0, 0))
 
-	payload, err := Scan(Options{Workspace: root, Term: "FS26", Course: "empty-course"})
-	if err != nil {
-		t.Fatalf("Scan: %v", err)
-	}
-	got := payload.Courses[0]
-	if got.Status == "complete" {
-		t.Fatalf("expected incomplete course, got %#v", got)
-	}
-	if len(got.Issues) == 0 {
-		t.Fatalf("expected missing quality gate issues")
-	}
-}
-
-func writeFile(t *testing.T, path string, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", path, err)
+	if payload.Summary.Tasks != 1 || payload.Summary.Solutions != 1 || payload.Summary.LinkedSolutions != 1 {
+		t.Fatalf("unexpected summary: %#v", payload.Summary)
 	}
 }

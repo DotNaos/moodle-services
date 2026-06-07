@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -45,53 +43,47 @@ func (s stubClient) FetchCategories() ([]moodle.Category, error) {
 	return s.categories, nil
 }
 
-func TestStudyPipelineCoursesHandler(t *testing.T) {
-	workspace := t.TempDir()
-	course := filepath.Join(workspace, "terms", "FS26", "courses", "high-performance-computing")
-	writeTestFile(t, filepath.Join(course, "README.md"), "# High Performance Computing\n")
-	writeTestFile(t, filepath.Join(course, ".raw", "Moodle.md"), "# Moodle\n")
-	writeTestFile(t, filepath.Join(course, ".raw", "materials.index.yaml"), "materials: []\n")
-	writeTestFile(t, filepath.Join(course, ".raw", "materials", "01", "deck.pdf"), "pdf")
-	writeTestFile(t, filepath.Join(course, ".extracted", "script", "Script.mdx"), "# Extracted\n")
-	writeTestFile(t, filepath.Join(course, ".extracted", "slides", "01.mdx"), "# Slide\n")
-	writeTestFile(t, filepath.Join(course, ".extracted", "tasks", "01-task.mdx"), "# Task\n")
-	writeTestFile(t, filepath.Join(course, "script", "Script.mdx"), "# Script\n")
-	writeTestFile(t, filepath.Join(course, "tasks", "01-task.mdx"), "---\nsolution_status: moodle-solution-missing\n---\n# Task\n")
-
+func TestStudyPipelineHandlerBuildsCoursePlan(t *testing.T) {
 	router, err := NewRouter(ServerOptions{
 		ClientProvider: func() (Client, error) {
-			return stubClient{}, nil
+			return stubClient{
+				resources: map[string][]moodle.Resource{
+					"22584": {
+						{ID: "1", Name: "01 Memory Hierarchy", FileType: "pdf", SectionID: "s1"},
+						{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+						{ID: "3", Name: "Lösung Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+					},
+				},
+			}, nil
 		},
-		StudyWorkspace: workspace,
 	})
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/study-pipeline/courses?term=FS26", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/courses/22584/study-pipeline", nil)
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
 	}
 	var payload struct {
+		Status  string `json:"status"`
 		Summary struct {
-			Courses int `json:"courses"`
+			Tasks           int `json:"tasks"`
+			LinkedSolutions int `json:"linkedSolutions"`
 		} `json:"summary"`
-		Courses []struct {
-			Slug string `json:"slug"`
-		} `json:"courses"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.Summary.Courses != 1 || payload.Courses[0].Slug != "high-performance-computing" {
+	if payload.Status != "created" || payload.Summary.Tasks != 1 || payload.Summary.LinkedSolutions != 1 {
 		t.Fatalf("unexpected payload: %#v", payload)
 	}
 }
 
-func TestStudyPipelineRequiresWorkspace(t *testing.T) {
+func TestStudyPipelineRequiresCourseID(t *testing.T) {
 	router, err := NewRouter(ServerOptions{
 		ClientProvider: func() (Client, error) {
 			return stubClient{}, nil
@@ -102,21 +94,11 @@ func TestStudyPipelineRequiresWorkspace(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/study-pipeline/courses", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/courses/%20/study-pipeline", nil)
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-}
-
-func writeTestFile(t *testing.T, path string, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", path, err)
 	}
 }
 

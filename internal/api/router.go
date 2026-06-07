@@ -35,7 +35,6 @@ type ServerOptions struct {
 	CommandRunner  CommandRunner
 	LogWriter      io.Writer
 	RequestTimeout time.Duration
-	StudyWorkspace string
 }
 
 // NewRouter builds a chi router exposing the REST API.
@@ -69,8 +68,8 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses", coursesHandler(opts))
 	router.Get("/api/categories", categoriesHandler(opts))
 	router.Get("/api/courses/{courseID}/resources", courseResourcesHandler(opts))
-	router.Get("/api/study-pipeline/courses", studyPipelineCoursesHandler(opts))
-	router.Get("/api/study-pipeline/courses/{courseSlug}", studyPipelineCourseHandler(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline", studyPipelineHandler(opts, "planned"))
+	router.Post("/api/courses/{courseID}/study-pipeline", studyPipelineHandler(opts, "created"))
 	registerCommandRoutes(router, opts)
 
 	return router, nil
@@ -89,51 +88,27 @@ func localCORSMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func studyPipelineCoursesHandler(opts ServerOptions) http.HandlerFunc {
+func studyPipelineHandler(opts ServerOptions, status string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		payload, err := studypipeline.Scan(studypipeline.Options{
-			Workspace: firstNonEmpty(r.URL.Query().Get("workspace"), opts.StudyWorkspace),
-			Term:      r.URL.Query().Get("term"),
-		})
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
+		courseID := strings.TrimSpace(chi.URLParam(r, "courseID"))
+		if courseID == "" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("courseID is required"))
 			return
 		}
-		writeJSON(w, http.StatusOK, payload)
-	}
-}
 
-func studyPipelineCourseHandler(opts ServerOptions) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		courseSlug := strings.TrimSpace(chi.URLParam(r, "courseSlug"))
-		if courseSlug == "" {
-			writeError(w, http.StatusBadRequest, fmt.Errorf("courseSlug is required"))
-			return
-		}
-		payload, err := studypipeline.Scan(studypipeline.Options{
-			Workspace: firstNonEmpty(r.URL.Query().Get("workspace"), opts.StudyWorkspace),
-			Term:      r.URL.Query().Get("term"),
-			Course:    courseSlug,
-		})
+		client, err := opts.ClientProvider()
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
+			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		if len(payload.Courses) == 0 {
-			writeError(w, http.StatusNotFound, fmt.Errorf("course %q was not found in the study pipeline workspace", courseSlug))
+		resources, _, err := client.FetchCourseResources(courseID)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, payload.Courses[0])
-	}
-}
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
+		writeJSON(w, http.StatusOK, studypipeline.Build(courseID, resources, status, time.Now()))
 	}
-	return ""
 }
 
 func resolveLogWriter(writer io.Writer) io.Writer {

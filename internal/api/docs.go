@@ -160,39 +160,43 @@ func openAPIDocument(r *http.Request, opts ServerOptions) map[string]any {
 				},
 			},
 		},
-		"/api/study-pipeline/courses": map[string]any{
+		"/api/courses/{courseID}/study-pipeline": map[string]any{
 			"get": map[string]any{
-				"summary":     "List study pipeline courses",
-				"description": "Scans a local school workspace and returns raw, extracted, curated, and Reader readiness status for course material.",
-				"parameters": []map[string]any{
-					queryParameter("workspace", "School workspace root. Can also be supplied with --study-workspace."),
-					queryParameter("term", "Optional term filter, for example FS26."),
-				},
-				"responses": map[string]any{
-					"200": jsonResponse("Study pipeline courses", "#/components/schemas/StudyPipelineResponse"),
-					"400": errorResponse("Missing or invalid workspace"),
-				},
-			},
-		},
-		"/api/study-pipeline/courses/{courseSlug}": map[string]any{
-			"get": map[string]any{
-				"summary":     "Get one study pipeline course",
-				"description": "Returns raw, extracted, curated, and Reader readiness status for one course slug in the local school workspace.",
+				"summary":     "Get course study material plan",
+				"description": "Returns a study material plan built from the selected Moodle course resources.",
 				"parameters": []map[string]any{
 					{
-						"name":        "courseSlug",
+						"name":        "courseID",
 						"in":          "path",
 						"required":    true,
-						"description": "Course folder slug.",
+						"description": "Moodle course id.",
 						"schema":      map[string]any{"type": "string"},
 					},
-					queryParameter("workspace", "School workspace root. Can also be supplied with --study-workspace."),
-					queryParameter("term", "Optional term filter, for example FS26."),
 				},
 				"responses": map[string]any{
-					"200": jsonResponse("Study pipeline course", "#/components/schemas/StudyPipelineCourse"),
-					"400": errorResponse("Missing or invalid workspace"),
-					"404": errorResponse("Course not found"),
+					"200": jsonResponse("Study material plan", "#/components/schemas/StudyPipelineResponse"),
+					"400": errorResponse("Missing course id"),
+					"500": errorResponse("Server bootstrap error"),
+					"502": errorResponse("Moodle fetch failed"),
+				},
+			},
+			"post": map[string]any{
+				"summary":     "Create course study material plan",
+				"description": "Creates a fresh study material plan from the selected Moodle course resources.",
+				"parameters": []map[string]any{
+					{
+						"name":        "courseID",
+						"in":          "path",
+						"required":    true,
+						"description": "Moodle course id.",
+						"schema":      map[string]any{"type": "string"},
+					},
+				},
+				"responses": map[string]any{
+					"200": jsonResponse("Created study material plan", "#/components/schemas/StudyPipelineResponse"),
+					"400": errorResponse("Missing course id"),
+					"500": errorResponse("Server bootstrap error"),
+					"502": errorResponse("Moodle fetch failed"),
 				},
 			},
 		},
@@ -370,31 +374,61 @@ func openAPIDocument(r *http.Request, opts ServerOptions) map[string]any {
 				},
 				"StudyPipelineResponse": map[string]any{
 					"type":     "object",
-					"required": []string{"workspace", "summary", "courses"},
+					"required": []string{"courseId", "status", "createdAt", "summary", "materials", "taskLinks", "missingSolutions"},
 					"properties": map[string]any{
-						"workspace": map[string]any{"type": "string"},
-						"term":      map[string]any{"type": "string"},
-						"summary":   map[string]any{"type": "object", "additionalProperties": true},
-						"courses": map[string]any{
+						"courseId":  map[string]any{"type": "string", "example": "22584"},
+						"status":    map[string]any{"type": "string", "enum": []string{"planned", "created"}},
+						"createdAt": map[string]any{"type": "string", "format": "date-time"},
+						"summary":   map[string]any{"$ref": "#/components/schemas/StudyPipelineSummary"},
+						"materials": map[string]any{
 							"type":  "array",
-							"items": map[string]any{"$ref": "#/components/schemas/StudyPipelineCourse"},
+							"items": map[string]any{"$ref": "#/components/schemas/StudyPipelineMaterial"},
+						},
+						"taskLinks": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"$ref": "#/components/schemas/StudyPipelineTaskLink"},
+						},
+						"missingSolutions": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"$ref": "#/components/schemas/StudyPipelineMaterial"},
 						},
 					},
 				},
-				"StudyPipelineCourse": map[string]any{
+				"StudyPipelineSummary": map[string]any{
 					"type":     "object",
-					"required": []string{"term", "slug", "title", "status", "raw", "extracted", "curated", "reader", "qualityGates"},
+					"required": []string{"totalResources", "slides", "scripts", "tasks", "solutions", "other", "linkedSolutions", "missingSolutions"},
 					"properties": map[string]any{
-						"term":         map[string]any{"type": "string", "example": "FS26"},
-						"slug":         map[string]any{"type": "string", "example": "high-performance-computing"},
-						"title":        map[string]any{"type": "string", "example": "High Performance Computing"},
-						"status":       map[string]any{"type": "string", "enum": []string{"complete", "partial", "missing", "stale"}},
-						"raw":          map[string]any{"type": "object", "additionalProperties": true},
-						"extracted":    map[string]any{"type": "object", "additionalProperties": true},
-						"curated":      map[string]any{"type": "object", "additionalProperties": true},
-						"reader":       map[string]any{"type": "object", "additionalProperties": true},
-						"qualityGates": map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": true}},
-						"issues":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"totalResources":   map[string]any{"type": "integer"},
+						"slides":           map[string]any{"type": "integer"},
+						"scripts":          map[string]any{"type": "integer"},
+						"tasks":            map[string]any{"type": "integer"},
+						"solutions":        map[string]any{"type": "integer"},
+						"other":            map[string]any{"type": "integer"},
+						"linkedSolutions":  map[string]any{"type": "integer"},
+						"missingSolutions": map[string]any{"type": "integer"},
+					},
+				},
+				"StudyPipelineMaterial": map[string]any{
+					"type":     "object",
+					"required": []string{"id", "name", "type"},
+					"properties": map[string]any{
+						"id":           map[string]any{"type": "string"},
+						"name":         map[string]any{"type": "string"},
+						"url":          map[string]any{"type": "string"},
+						"type":         map[string]any{"type": "string", "enum": []string{"slide", "script", "task", "solution", "other"}},
+						"resourceType": map[string]any{"type": "string"},
+						"fileType":     map[string]any{"type": "string"},
+						"sectionId":    map[string]any{"type": "string"},
+						"sectionName":  map[string]any{"type": "string"},
+					},
+				},
+				"StudyPipelineTaskLink": map[string]any{
+					"type":     "object",
+					"required": []string{"task", "status"},
+					"properties": map[string]any{
+						"task":     map[string]any{"$ref": "#/components/schemas/StudyPipelineMaterial"},
+						"solution": map[string]any{"$ref": "#/components/schemas/StudyPipelineMaterial"},
+						"status":   map[string]any{"type": "string", "enum": []string{"linked", "missing-solution"}},
 					},
 				},
 				"Error": map[string]any{
