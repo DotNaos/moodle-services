@@ -182,8 +182,8 @@ func WriteComparisonMarkdown(comparison Comparison) error {
 			row.DurationMs,
 			row.MarkdownCharacters,
 			row.ImageCount,
-			escapeTable(strings.Join(row.Warnings, "; ")),
-			escapeTable(strings.Join(row.OutputFiles, ", ")),
+			escapeTable(formatComparisonWarnings(row.Warnings)),
+			escapeTable(formatComparisonFiles(row.OutputFiles)),
 		))
 	}
 	if err := os.MkdirAll(filepath.Dir(comparison.Path), 0o755); err != nil {
@@ -195,4 +195,39 @@ func WriteComparisonMarkdown(comparison Comparison) error {
 func escapeTable(value string) string {
 	value = strings.ReplaceAll(value, "\n", " ")
 	return strings.ReplaceAll(value, "|", "\\|")
+}
+
+func formatComparisonWarnings(warnings []string) string {
+	if len(warnings) == 0 {
+		return ""
+	}
+	value := strings.Join(warnings, "; ")
+	value = strings.Join(strings.Fields(value), " ")
+	const limit = 500
+	if len([]rune(value)) > limit {
+		runes := []rune(value)
+		return string(runes[:limit]) + "..."
+	}
+	return value
+}
+
+func formatComparisonFiles(files []string) string {
+	if len(files) == 0 {
+		return ""
+	}
+	const maxFiles = 8
+	kept := files
+	if len(files) > maxFiles {
+		kept = files[:maxFiles]
+	}
+	value := strings.Join(kept, ", ")
+	if len(files) > maxFiles {
+		value = fmt.Sprintf("%d files total, showing first %d: %s", len(files), maxFiles, value)
+	}
+	const limit = 500
+	if len([]rune(value)) > limit {
+		runes := []rune(value)
+		return string(runes[:limit]) + "..."
+	}
+	return value
 }

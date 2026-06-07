@@ -70,9 +70,30 @@ func (e DockerExecutor) Run(ctx context.Context, provider Provider, inputPDF str
 
 	result := ParseOutput(provider, outputDir, exitCode, timedOut, durationMs)
 	if err != nil && !timedOut {
-		result.Warnings = uniqueStrings(append(result.Warnings, strings.TrimSpace(stderr.String())))
+		result.Warnings = uniqueStrings(append(result.Warnings, compactProcessWarning(stderr.String())))
 	}
 	return result, nil
+}
+
+func compactProcessWarning(value string) string {
+	lines := strings.Split(strings.TrimSpace(value), "\n")
+	kept := make([]string, 0, 6)
+	for i := len(lines) - 1; i >= 0 && len(kept) < 6; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	for i, j := 0, len(kept)-1; i < j; i, j = i+1, j-1 {
+		kept[i], kept[j] = kept[j], kept[i]
+	}
+	warning := strings.Join(kept, " ")
+	if len([]rune(warning)) > 500 {
+		runes := []rune(warning)
+		warning = string(runes[:500]) + "..."
+	}
+	return warning
 }
 
 func logStreamWriter(opts Options, buffer *bytes.Buffer, stream string) io.Writer {
@@ -143,6 +164,14 @@ func DockerRunArgs(provider Provider, inputPDF string, outputDir string, opts Op
 		"-e", boolEnv("OCR_FORMULA", opts.Formula),
 		"-e", boolEnv("OCR_CODE", opts.Code),
 	)
+	if provider.ID == "paddleocr" {
+		args = append(args,
+			"-e", "OMP_NUM_THREADS=1",
+			"-e", "OPENBLAS_NUM_THREADS=1",
+			"-e", "CPU_NUM=1",
+			"-e", "FLAGS_use_mkldnn=0",
+		)
+	}
 	if cacheDir, err := resolveOCRCacheDir(); err == nil && cacheDir != "" {
 		args = append(args,
 			"-e", "HF_HOME=/cache/huggingface",

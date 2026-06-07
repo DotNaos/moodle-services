@@ -4,6 +4,7 @@ bin/
 node_modules/
 apps/chatgpt-widget/dist/
 test-results/
+out/
 *.log
 .moodle-cli/
 .vercel

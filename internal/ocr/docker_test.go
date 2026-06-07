@@ -118,3 +118,13 @@ func TestLogStreamWriterPrefixesVerboseOutput(t *testing.T) {
 		t.Fatalf("streamed log = %q", got)
 	}
 }
+
+func TestCompactProcessWarningKeepsTailAndTruncates(t *testing.T) {
+	warning := compactProcessWarning(strings.Repeat("noise\n", 20) + strings.Repeat("x", 800))
+	if len([]rune(warning)) > 503 {
+		t.Fatalf("warning was not truncated: %d", len([]rune(warning)))
+	}
+	if !strings.Contains(warning, "xxx") {
+		t.Fatalf("expected tail content in warning, got %q", warning)
+	}
+}
