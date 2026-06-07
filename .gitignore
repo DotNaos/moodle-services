@@ -7,3 +7,6 @@ test-results/
 *.log
 .moodle-cli/
 .vercel
+
+# local git worktrees
+.worktrees/

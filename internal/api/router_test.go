@@ -69,6 +69,83 @@ func TestHealthHandlerOK(t *testing.T) {
 	}
 }
 
+func TestServerlessParityAuthRoutesAreRegistered(t *testing.T) {
+	t.Setenv("MOODLE_WEB_INTERNAL_SECRET", "")
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodPost, path: "/api/auth/clerk/qr/exchange"},
+		{method: http.MethodPost, path: "/api/auth/clerk/login"},
+		{method: http.MethodPost, path: "/api/auth/clerk/session"},
+		{method: http.MethodPost, path: "/api/auth/clerk/mobile/bridge/start"},
+		{method: http.MethodGet, path: "/api/auth/clerk/mobile/bridge/status?challenge=test"},
+		{method: http.MethodPost, path: "/api/auth/clerk/mobile/bridge/complete"},
+		{method: http.MethodGet, path: "/api/auth/clerk/codex/state"},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`))
+		router.ServeHTTP(rec, req)
+
+		if rec.Code == http.StatusNotFound {
+			t.Fatalf("%s %s returned 404; expected Docker router to mirror Vercel rewrite", tc.method, tc.path)
+		}
+	}
+}
+
+func TestServerlessParityWebRoutesAreRegistered(t *testing.T) {
+	t.Setenv("MOODLE_WEB_INTERNAL_SECRET", "")
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/.well-known/oauth-protected-resource"},
+		{method: http.MethodGet, path: "/.well-known/oauth-authorization-server"},
+		{method: http.MethodPost, path: "/oauth/register"},
+		{method: http.MethodGet, path: "/oauth/authorize"},
+		{method: http.MethodPost, path: "/oauth/authorize/complete"},
+		{method: http.MethodPost, path: "/oauth/token"},
+		{method: http.MethodGet, path: "/api/docs"},
+		{method: http.MethodPost, path: "/api/mcp"},
+		{method: http.MethodGet, path: "/api/openapi.json"},
+		{method: http.MethodGet, path: "/api/me"},
+		{method: http.MethodGet, path: "/api/keys"},
+		{method: http.MethodGet, path: "/api/search?q=moodle"},
+		{method: http.MethodGet, path: "/api/courses/22584/materials"},
+		{method: http.MethodGet, path: "/api/courses/22584/materials/974595/text"},
+		{method: http.MethodGet, path: "/api/courses/22584/materials/974595/pdf"},
+		{method: http.MethodGet, path: "/api/courses/22584/recordings"},
+		{method: http.MethodGet, path: "/api/calendar"},
+		{method: http.MethodPost, path: "/api/webex/credentials"},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`))
+		router.ServeHTTP(rec, req)
+
+		if rec.Code == http.StatusNotFound {
+			t.Fatalf("%s %s returned 404; expected Docker router to mirror Vercel rewrite", tc.method, tc.path)
+		}
+	}
+}
+
 func TestOpenAPIHandler(t *testing.T) {
 	router, err := NewRouter(ServerOptions{
 		ClientProvider: func() (Client, error) {
