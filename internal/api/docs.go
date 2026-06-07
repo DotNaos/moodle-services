@@ -160,6 +160,42 @@ func openAPIDocument(r *http.Request, opts ServerOptions) map[string]any {
 				},
 			},
 		},
+		"/api/study-pipeline/courses": map[string]any{
+			"get": map[string]any{
+				"summary":     "List study pipeline courses",
+				"description": "Scans a local school workspace and returns raw, extracted, curated, and Reader readiness status for course material.",
+				"parameters": []map[string]any{
+					queryParameter("workspace", "School workspace root. Can also be supplied with --study-workspace."),
+					queryParameter("term", "Optional term filter, for example FS26."),
+				},
+				"responses": map[string]any{
+					"200": jsonResponse("Study pipeline courses", "#/components/schemas/StudyPipelineResponse"),
+					"400": errorResponse("Missing or invalid workspace"),
+				},
+			},
+		},
+		"/api/study-pipeline/courses/{courseSlug}": map[string]any{
+			"get": map[string]any{
+				"summary":     "Get one study pipeline course",
+				"description": "Returns raw, extracted, curated, and Reader readiness status for one course slug in the local school workspace.",
+				"parameters": []map[string]any{
+					{
+						"name":        "courseSlug",
+						"in":          "path",
+						"required":    true,
+						"description": "Course folder slug.",
+						"schema":      map[string]any{"type": "string"},
+					},
+					queryParameter("workspace", "School workspace root. Can also be supplied with --study-workspace."),
+					queryParameter("term", "Optional term filter, for example FS26."),
+				},
+				"responses": map[string]any{
+					"200": jsonResponse("Study pipeline course", "#/components/schemas/StudyPipelineCourse"),
+					"400": errorResponse("Missing or invalid workspace"),
+					"404": errorResponse("Course not found"),
+				},
+			},
+		},
 	}
 
 	for _, route := range opts.CommandRoutes {
@@ -332,6 +368,35 @@ func openAPIDocument(r *http.Request, opts ServerOptions) map[string]any {
 						},
 					},
 				},
+				"StudyPipelineResponse": map[string]any{
+					"type":     "object",
+					"required": []string{"workspace", "summary", "courses"},
+					"properties": map[string]any{
+						"workspace": map[string]any{"type": "string"},
+						"term":      map[string]any{"type": "string"},
+						"summary":   map[string]any{"type": "object", "additionalProperties": true},
+						"courses": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"$ref": "#/components/schemas/StudyPipelineCourse"},
+						},
+					},
+				},
+				"StudyPipelineCourse": map[string]any{
+					"type":     "object",
+					"required": []string{"term", "slug", "title", "status", "raw", "extracted", "curated", "reader", "qualityGates"},
+					"properties": map[string]any{
+						"term":         map[string]any{"type": "string", "example": "FS26"},
+						"slug":         map[string]any{"type": "string", "example": "high-performance-computing"},
+						"title":        map[string]any{"type": "string", "example": "High Performance Computing"},
+						"status":       map[string]any{"type": "string", "enum": []string{"complete", "partial", "missing", "stale"}},
+						"raw":          map[string]any{"type": "object", "additionalProperties": true},
+						"extracted":    map[string]any{"type": "object", "additionalProperties": true},
+						"curated":      map[string]any{"type": "object", "additionalProperties": true},
+						"reader":       map[string]any{"type": "object", "additionalProperties": true},
+						"qualityGates": map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": true}},
+						"issues":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					},
+				},
 				"Error": map[string]any{
 					"type": "object",
 					"required": []string{
@@ -431,6 +496,31 @@ func errorResponse(description string) map[string]any {
 					"$ref": "#/components/schemas/Error",
 				},
 			},
+		},
+	}
+}
+
+func jsonResponse(description string, schemaRef string) map[string]any {
+	return map[string]any{
+		"description": description,
+		"content": map[string]any{
+			"application/json": map[string]any{
+				"schema": map[string]any{
+					"$ref": schemaRef,
+				},
+			},
+		},
+	}
+}
+
+func queryParameter(name string, description string) map[string]any {
+	return map[string]any{
+		"name":        name,
+		"in":          "query",
+		"required":    false,
+		"description": description,
+		"schema": map[string]any{
+			"type": "string",
 		},
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DotNaos/moodle-services/internal/moodle"
+	"github.com/DotNaos/moodle-services/internal/studypipeline"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -34,6 +35,7 @@ type ServerOptions struct {
 	CommandRunner  CommandRunner
 	LogWriter      io.Writer
 	RequestTimeout time.Duration
+	StudyWorkspace string
 }
 
 // NewRouter builds a chi router exposing the REST API.
@@ -51,6 +53,7 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Use(
 		middleware.RequestID,
 		middleware.RealIP,
+		localCORSMiddleware,
 		middleware.RequestLogger(&middleware.DefaultLogFormatter{
 			Logger:  log.New(resolveLogWriter(opts.LogWriter), "", log.LstdFlags),
 			NoColor: true,
@@ -66,9 +69,71 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses", coursesHandler(opts))
 	router.Get("/api/categories", categoriesHandler(opts))
 	router.Get("/api/courses/{courseID}/resources", courseResourcesHandler(opts))
+	router.Get("/api/study-pipeline/courses", studyPipelineCoursesHandler(opts))
+	router.Get("/api/study-pipeline/courses/{courseSlug}", studyPipelineCourseHandler(opts))
 	registerCommandRoutes(router, opts)
 
 	return router, nil
+}
+
+func localCORSMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "authorization, content-type, x-moodle-app-key")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func studyPipelineCoursesHandler(opts ServerOptions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		payload, err := studypipeline.Scan(studypipeline.Options{
+			Workspace: firstNonEmpty(r.URL.Query().Get("workspace"), opts.StudyWorkspace),
+			Term:      r.URL.Query().Get("term"),
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, payload)
+	}
+}
+
+func studyPipelineCourseHandler(opts ServerOptions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		courseSlug := strings.TrimSpace(chi.URLParam(r, "courseSlug"))
+		if courseSlug == "" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("courseSlug is required"))
+			return
+		}
+		payload, err := studypipeline.Scan(studypipeline.Options{
+			Workspace: firstNonEmpty(r.URL.Query().Get("workspace"), opts.StudyWorkspace),
+			Term:      r.URL.Query().Get("term"),
+			Course:    courseSlug,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if len(payload.Courses) == 0 {
+			writeError(w, http.StatusNotFound, fmt.Errorf("course %q was not found in the study pipeline workspace", courseSlug))
+			return
+		}
+		writeJSON(w, http.StatusOK, payload.Courses[0])
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func resolveLogWriter(writer io.Writer) io.Writer {

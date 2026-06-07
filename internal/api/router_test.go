@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -41,6 +43,81 @@ func (s stubClient) FetchCourseResources(courseID string) ([]moodle.Resource, st
 
 func (s stubClient) FetchCategories() ([]moodle.Category, error) {
 	return s.categories, nil
+}
+
+func TestStudyPipelineCoursesHandler(t *testing.T) {
+	workspace := t.TempDir()
+	course := filepath.Join(workspace, "terms", "FS26", "courses", "high-performance-computing")
+	writeTestFile(t, filepath.Join(course, "README.md"), "# High Performance Computing\n")
+	writeTestFile(t, filepath.Join(course, ".raw", "Moodle.md"), "# Moodle\n")
+	writeTestFile(t, filepath.Join(course, ".raw", "materials.index.yaml"), "materials: []\n")
+	writeTestFile(t, filepath.Join(course, ".raw", "materials", "01", "deck.pdf"), "pdf")
+	writeTestFile(t, filepath.Join(course, ".extracted", "script", "Script.mdx"), "# Extracted\n")
+	writeTestFile(t, filepath.Join(course, ".extracted", "slides", "01.mdx"), "# Slide\n")
+	writeTestFile(t, filepath.Join(course, ".extracted", "tasks", "01-task.mdx"), "# Task\n")
+	writeTestFile(t, filepath.Join(course, "script", "Script.mdx"), "# Script\n")
+	writeTestFile(t, filepath.Join(course, "tasks", "01-task.mdx"), "---\nsolution_status: moodle-solution-missing\n---\n# Task\n")
+
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{}, nil
+		},
+		StudyWorkspace: workspace,
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/study-pipeline/courses?term=FS26", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Summary struct {
+			Courses int `json:"courses"`
+		} `json:"summary"`
+		Courses []struct {
+			Slug string `json:"slug"`
+		} `json:"courses"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Summary.Courses != 1 || payload.Courses[0].Slug != "high-performance-computing" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+}
+
+func TestStudyPipelineRequiresWorkspace(t *testing.T) {
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/study-pipeline/courses", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func writeTestFile(t *testing.T, path string, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }
 
 func TestHealthHandlerOK(t *testing.T) {

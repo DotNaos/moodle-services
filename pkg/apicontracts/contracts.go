@@ -96,3 +96,83 @@ type WebexCredentialsResponse struct {
 type WebexRecordingsResponse struct {
 	Recordings []moodleservice.WebexRecording `json:"recordings"`
 }
+
+type StudyPipelineResponse struct {
+	Workspace string                `json:"workspace"`
+	Term      string                `json:"term,omitempty"`
+	Summary   StudyPipelineSummary  `json:"summary"`
+	Courses   []StudyPipelineCourse `json:"courses"`
+}
+
+type StudyPipelineSummary struct {
+	Courses        int `json:"courses"`
+	Complete       int `json:"complete"`
+	Partial        int `json:"partial"`
+	Missing        int `json:"missing"`
+	RawMaterials   int `json:"rawMaterials"`
+	ExtractedFiles int `json:"extractedFiles"`
+	CuratedFiles   int `json:"curatedFiles"`
+}
+
+type StudyPipelineCourse struct {
+	Term         string                      `json:"term"`
+	Slug         string                      `json:"slug"`
+	Title        string                      `json:"title"`
+	Path         string                      `json:"path"`
+	Status       string                      `json:"status"`
+	UpdatedAt    string                      `json:"updatedAt,omitempty"`
+	Raw          StudyPipelineRawStage       `json:"raw"`
+	Extracted    StudyPipelineExtractedStage `json:"extracted"`
+	Curated      StudyPipelineCuratedStage   `json:"curated"`
+	Reader       StudyPipelineReaderStatus   `json:"reader"`
+	QualityGates []StudyPipelineQualityGate  `json:"qualityGates"`
+	Issues       []string                    `json:"issues,omitempty"`
+}
+
+type StudyPipelineRawStage struct {
+	Status       string                  `json:"status"`
+	MoodleMD     StudyPipelineFileStatus `json:"moodleMd"`
+	MaterialsYML StudyPipelineFileStatus `json:"materialsYaml"`
+	Materials    StudyPipelineFileCount  `json:"materials"`
+}
+
+type StudyPipelineExtractedStage struct {
+	Status    string                  `json:"status"`
+	Script    StudyPipelineFileStatus `json:"script"`
+	Slides    StudyPipelineFileCount  `json:"slides"`
+	Tasks     StudyPipelineFileCount  `json:"tasks"`
+	Solutions StudyPipelineFileCount  `json:"solutions"`
+	Assets    int                     `json:"assets"`
+}
+
+type StudyPipelineCuratedStage struct {
+	Status         string                  `json:"status"`
+	Script         StudyPipelineFileStatus `json:"script"`
+	Tasks          StudyPipelineFileCount  `json:"tasks"`
+	Solutions      StudyPipelineFileCount  `json:"solutions"`
+	SolutionStates map[string]int          `json:"solutionStates,omitempty"`
+	StaleFiles     []string                `json:"staleFiles,omitempty"`
+}
+
+type StudyPipelineReaderStatus struct {
+	Supported bool   `json:"supported"`
+	URL       string `json:"url,omitempty"`
+}
+
+type StudyPipelineQualityGate struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Passed bool   `json:"passed"`
+}
+
+type StudyPipelineFileStatus struct {
+	Path      string `json:"path"`
+	Exists    bool   `json:"exists"`
+	SizeBytes int64  `json:"sizeBytes,omitempty"`
+	ModTime   string `json:"modTime,omitempty"`
+}
+
+type StudyPipelineFileCount struct {
+	Files int   `json:"files"`
+	Bytes int64 `json:"bytes,omitempty"`
+}
