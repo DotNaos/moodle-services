@@ -77,6 +77,10 @@
       "destination": "/api/materials?courseId=:courseId"
     },
     {
+      "source": "/api/courses/:courseId/study-pipeline",
+      "destination": "/api/materials?route=study-pipeline&courseId=:courseId"
+    },
+    {
       "source": "/api/courses/:courseId/recordings",
       "destination": "/api/courses?route=recordings&courseId=:courseId"
     },

@@ -43,6 +43,65 @@ func (s stubClient) FetchCategories() ([]moodle.Category, error) {
 	return s.categories, nil
 }
 
+func TestStudyPipelineHandlerBuildsCoursePlan(t *testing.T) {
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{
+				resources: map[string][]moodle.Resource{
+					"22584": {
+						{ID: "1", Name: "01 Memory Hierarchy", FileType: "pdf", SectionID: "s1"},
+						{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+						{ID: "3", Name: "Lösung Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+					},
+				},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/courses/22584/study-pipeline", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Status  string `json:"status"`
+		Summary struct {
+			Tasks           int `json:"tasks"`
+			LinkedSolutions int `json:"linkedSolutions"`
+		} `json:"summary"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Status != "created" || payload.Summary.Tasks != 1 || payload.Summary.LinkedSolutions != 1 {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+}
+
+func TestStudyPipelineRequiresCourseID(t *testing.T) {
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/courses/%20/study-pipeline", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
 func TestHealthHandlerOK(t *testing.T) {
 	router, err := NewRouter(ServerOptions{
 		ClientProvider: func() (Client, error) {

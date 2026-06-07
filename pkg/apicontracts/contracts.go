@@ -96,3 +96,41 @@ type WebexCredentialsResponse struct {
 type WebexRecordingsResponse struct {
 	Recordings []moodleservice.WebexRecording `json:"recordings"`
 }
+
+type StudyPipelineResponse struct {
+	CourseID         string                  `json:"courseId"`
+	Status           string                  `json:"status"`
+	CreatedAt        string                  `json:"createdAt"`
+	Summary          StudyPipelineSummary    `json:"summary"`
+	Materials        []StudyPipelineMaterial `json:"materials"`
+	TaskLinks        []StudyPipelineTaskLink `json:"taskLinks"`
+	MissingSolutions []StudyPipelineMaterial `json:"missingSolutions"`
+}
+
+type StudyPipelineSummary struct {
+	TotalResources   int `json:"totalResources"`
+	Slides           int `json:"slides"`
+	Scripts          int `json:"scripts"`
+	Tasks            int `json:"tasks"`
+	Solutions        int `json:"solutions"`
+	Other            int `json:"other"`
+	LinkedSolutions  int `json:"linkedSolutions"`
+	MissingSolutions int `json:"missingSolutions"`
+}
+
+type StudyPipelineMaterial struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	URL          string `json:"url,omitempty"`
+	Type         string `json:"type"`
+	ResourceType string `json:"resourceType,omitempty"`
+	FileType     string `json:"fileType,omitempty"`
+	SectionID    string `json:"sectionId,omitempty"`
+	SectionName  string `json:"sectionName,omitempty"`
+}
+
+type StudyPipelineTaskLink struct {
+	Task     StudyPipelineMaterial  `json:"task"`
+	Solution *StudyPipelineMaterial `json:"solution,omitempty"`
+	Status   string                 `json:"status"`
+}
