@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -205,17 +206,46 @@ func dockerHostMountPath(containerPath string) string {
 	if containerDataDir == "" {
 		containerDataDir = "/data"
 	}
-	containerPath = filepath.Clean(containerPath)
-	containerDataDir = filepath.Clean(containerDataDir)
-	if containerPath == containerDataDir {
-		return filepath.Clean(hostDataDir)
+	containerMatchPath := cleanDockerContainerPath(containerPath)
+	containerDataDir = cleanDockerContainerPath(containerDataDir)
+	if containerMatchPath == containerDataDir {
+		return cleanDockerHostPath(hostDataDir)
 	}
-	prefix := containerDataDir + string(filepath.Separator)
-	if strings.HasPrefix(containerPath, prefix) {
-		rel := strings.TrimPrefix(containerPath, prefix)
-		return filepath.Join(hostDataDir, rel)
+	prefix := strings.TrimRight(containerDataDir, "/") + "/"
+	if strings.HasPrefix(containerMatchPath, prefix) {
+		rel := strings.TrimPrefix(containerMatchPath, prefix)
+		return joinDockerHostPath(hostDataDir, rel)
 	}
 	return containerPath
+}
+
+func cleanDockerContainerPath(value string) string {
+	cleaned := path.Clean(strings.ReplaceAll(value, "\\", "/"))
+	if len(cleaned) >= 3 && cleaned[1] == ':' && cleaned[2] == '/' {
+		cleaned = cleaned[2:]
+	}
+	if cleaned == "" {
+		return "."
+	}
+	return cleaned
+}
+
+func cleanDockerHostPath(value string) string {
+	if usesSlashPath(value) {
+		return path.Clean(value)
+	}
+	return filepath.Clean(value)
+}
+
+func joinDockerHostPath(hostDataDir string, rel string) string {
+	if usesSlashPath(hostDataDir) {
+		return path.Join(hostDataDir, rel)
+	}
+	return filepath.Join(hostDataDir, filepath.FromSlash(rel))
+}
+
+func usesSlashPath(value string) bool {
+	return strings.Contains(value, "/") && !strings.Contains(value, "\\")
 }
 
 func resolveDockerPlatform(value string) string {
