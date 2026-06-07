@@ -11,7 +11,7 @@ formula_flag=True
 if [[ "${OCR_FORMULA:-0}" != "1" ]]; then formula_flag=False; fi
 
 if command -v mineru >/dev/null 2>&1; then
-  mineru -p "$input" -o "$work" -b pipeline -m auto -f "$formula_flag" || mineru -p "$input" -o "$work" -b pipeline -m auto
+  mineru -p "$input" -o "$work" -b pipeline -m auto -f "$formula_flag"
 elif command -v magic-pdf >/dev/null 2>&1; then
   magic-pdf -p "$input" -o "$work"
 else

@@ -7,7 +7,11 @@ work="$output/artifacts/marker"
 
 mkdir -p "$output/images" "$output/artifacts" "$output/logs" "$work"
 
-marker_single "$input" --output_dir "$work" --output_format markdown ${OCR_FORMULA:+} ${OCR_CODE:+}
+marker_single "$input" \
+  --output_dir "$work" \
+  --output_format markdown \
+  --disable_image_extraction \
+  --disable_multiprocessing
 
 md="$(find "$work" -type f -name '*.md' | head -n 1 || true)"
 html="$(find "$work" -type f -name '*.html' | head -n 1 || true)"

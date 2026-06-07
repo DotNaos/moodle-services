@@ -3,6 +3,7 @@ package ocr
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +44,30 @@ func TestDetectWarnings(t *testing.T) {
 		if !containsString(warnings, want) {
 			t.Fatalf("expected warning %q in %#v", want, warnings)
 		}
+	}
+}
+
+func TestFormatComparisonWarningsTruncates(t *testing.T) {
+	got := formatComparisonWarnings([]string{strings.Repeat("x", 800)})
+	if len([]rune(got)) > 503 {
+		t.Fatalf("warning was not truncated: %d", len([]rune(got)))
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Fatalf("expected ellipsis, got %q", got)
+	}
+}
+
+func TestFormatComparisonFilesSummarizesLongLists(t *testing.T) {
+	files := make([]string, 0, 20)
+	for i := 0; i < 20; i++ {
+		files = append(files, filepath.Join("images", strings.Repeat("x", 80), "page.png"))
+	}
+	got := formatComparisonFiles(files)
+	if len([]rune(got)) > 503 {
+		t.Fatalf("file list was not truncated: %d", len([]rune(got)))
+	}
+	if !strings.Contains(got, "20 files total") {
+		t.Fatalf("expected total file count, got %q", got)
 	}
 }
 
