@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/DotNaos/moodle-services/internal/moodle"
-	"github.com/DotNaos/moodle-services/internal/studypipeline"
+	"github.com/DotNaos/moodle-services/pkg/studypipeline"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )

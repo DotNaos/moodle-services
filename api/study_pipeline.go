@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DotNaos/moodle-services/internal/studypipeline"
 	svc "github.com/DotNaos/moodle-services/pkg/moodleservices"
+	"github.com/DotNaos/moodle-services/pkg/studypipeline"
 )
 
 func StudyPipeline(w http.ResponseWriter, r *http.Request) {
