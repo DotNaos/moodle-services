@@ -68,6 +68,17 @@ func TestDockerRunArgsTranslatesContainerDataPathForHostDaemon(t *testing.T) {
 	}
 }
 
+func TestDockerHostMountPathMatchesWindowsAbsoluteContainerPath(t *testing.T) {
+	t.Setenv("MOODLE_DOCKER_CONTAINER_DATA_DIR", "/data")
+	t.Setenv("MOODLE_DOCKER_HOST_DATA_DIR", "/home/codex/.moodle")
+
+	got := dockerHostMountPath(`D:\data\ocr\runtime`)
+	want := "/home/codex/.moodle/ocr/runtime"
+	if got != want {
+		t.Fatalf("dockerHostMountPath = %q, want %q", got, want)
+	}
+}
+
 func TestDockerRunArgsAddsSharedOCRCache(t *testing.T) {
 	cache := filepath.Join(t.TempDir(), "cache")
 	t.Setenv("MOODLE_OCR_CACHE_DIR", cache)
