@@ -13,6 +13,7 @@ import (
 
 	serverless "github.com/DotNaos/moodle-services/api"
 	"github.com/DotNaos/moodle-services/internal/moodle"
+	"github.com/DotNaos/moodle-services/pkg/studypipeline"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -52,6 +53,7 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Use(
 		middleware.RequestID,
 		middleware.RealIP,
+		localCORSMiddleware,
 		middleware.RequestLogger(&middleware.DefaultLogFormatter{
 			Logger:  log.New(resolveLogWriter(opts.LogWriter), "", log.LstdFlags),
 			NoColor: true,
@@ -67,6 +69,8 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses", coursesHandler(opts))
 	router.Get("/api/categories", categoriesHandler(opts))
 	router.Get("/api/courses/{courseID}/resources", courseResourcesHandler(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline", studyPipelineRoute(opts, "planned"))
+	router.Post("/api/courses/{courseID}/study-pipeline", studyPipelineRoute(opts, "created"))
 	registerServerlessParityRoutes(router)
 	registerCommandRoutes(router, opts)
 
@@ -138,6 +142,58 @@ func withRouteQuery(next http.HandlerFunc, staticQuery map[string]string, pathTo
 		urlCopy.RawQuery = query.Encode()
 		request.URL = &urlCopy
 		next(w, request)
+	}
+}
+
+func localCORSMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "authorization, content-type, x-moodle-app-key")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func studyPipelineRoute(opts ServerOptions, status string) http.HandlerFunc {
+	localHandler := studyPipelineHandler(opts, status)
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route": "study-pipeline",
+	}, map[string]string{
+		"courseID": "courseId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		localHandler(w, r)
+	}
+}
+
+func studyPipelineHandler(opts ServerOptions, status string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		courseID := strings.TrimSpace(chi.URLParam(r, "courseID"))
+		if courseID == "" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("courseID is required"))
+			return
+		}
+
+		client, err := opts.ClientProvider()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		resources, _, err := client.FetchCourseResources(courseID)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, studypipeline.Build(courseID, resources, status, time.Now()))
 	}
 }
 
