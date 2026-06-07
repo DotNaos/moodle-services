@@ -29,6 +29,8 @@ The raw OpenAPI document is available at:
   Returns the course page as a reader-friendly text outline.
 - `GET /api/courses/{courseID}/resources/{resourceID}/text`
   Returns extracted text for one file resource. Add `?raw=true` to skip PDF text cleanup.
+- `GET /api/courses/{courseID}/resources/{resourceID}/ocr`
+  Runs Docker-backed OCR for one PDF resource. Optional query parameters: `engine`, `out`, `format`, `timeout`, `docker-platform`, `gpu`, `formula`, `code`, `keepArtifacts`.
 - `GET /api/timetable`
   Returns timetable events from the configured calendar. Optional query parameters: `days`, `nextWeek`, `unique`.
 - `GET /api/current-lecture`
@@ -52,6 +54,7 @@ curl http://127.0.0.1:8080/healthz
 curl http://127.0.0.1:8080/api/courses
 curl http://127.0.0.1:8080/api/courses/18236/resources
 curl http://127.0.0.1:8080/api/courses/18236/page
+curl "http://127.0.0.1:8080/api/courses/18236/resources/12345/ocr?engine=docling&timeout=900"
 curl http://127.0.0.1:8080/api/timetable?days=30
 curl http://127.0.0.1:8080/api/version
 ```

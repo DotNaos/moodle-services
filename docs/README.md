@@ -8,6 +8,7 @@ Use this folder when you already know what you want to do.
 - [Bootstrap a server with one command](guides/bootstrap-server.md)
 - [Run the API with Docker and a fresh login](guides/run-api-with-docker-throwaway.md)
 - [Run the API with Docker Compose](guides/run-api-with-docker-compose.md)
+- [Docker OCR](guides/ocr-docker.md)
 - [Use the CLI locally](guides/install.md)
 - [Run the API locally](guides/run-api-locally.md)
 - [Update the CLI](guides/update.md)

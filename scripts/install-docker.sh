@@ -67,17 +67,38 @@ DATA_DIR="${MOODLE_HOME_HOST:-${HOME}/.moodle}"
 mkdir -p "${DATA_DIR}"
 
 if [[ -t 0 && -t 1 ]]; then
-  exec docker run --rm -it \
-    -v "${DATA_DIR}:/data" \
-    -e MOODLE_HOME=/data \
-    -e TERM="${TERM:-xterm-256color}" \
+  docker_args=(
+    --rm -it
+    -v "${DATA_DIR}:/data"
+    -e MOODLE_HOME=/data
+    -e MOODLE_DOCKER_CONTAINER_DATA_DIR=/data
+    -e MOODLE_DOCKER_HOST_DATA_DIR="${DATA_DIR}"
+    -e MOODLE_OCR_CACHE_DIR=/data/ocr/cache
+    -e TERM="${TERM:-xterm-256color}"
+  )
+  if [[ -S /var/run/docker.sock ]]; then
+    docker_args+=(-v /var/run/docker.sock:/var/run/docker.sock)
+  fi
+  exec docker run \
+    "${docker_args[@]}" \
     "${IMAGE}" "$@"
 fi
 
-exec docker run --rm \
-  -v "${DATA_DIR}:/data" \
-  -e MOODLE_HOME=/data \
-  -e TERM="${TERM:-xterm-256color}" \
+docker_args=(
+  --rm
+  -v "${DATA_DIR}:/data"
+  -e MOODLE_HOME=/data
+  -e MOODLE_DOCKER_CONTAINER_DATA_DIR=/data
+  -e MOODLE_DOCKER_HOST_DATA_DIR="${DATA_DIR}"
+  -e MOODLE_OCR_CACHE_DIR=/data/ocr/cache
+  -e TERM="${TERM:-xterm-256color}"
+)
+if [[ -S /var/run/docker.sock ]]; then
+  docker_args+=(-v /var/run/docker.sock:/var/run/docker.sock)
+fi
+
+exec docker run \
+  "${docker_args[@]}" \
   "${IMAGE}" "$@"
 WRAPPER
 escaped_image="${IMAGE//\\/\\\\}"

@@ -34,11 +34,29 @@ func TestAPICommandRoutesAreCuratedDataEndpoints(t *testing.T) {
 		"/api/nav",
 		"/api/courses/{courseID}/page",
 		"/api/courses/{courseID}/resources/{resourceID}/text",
+		"/api/courses/{courseID}/resources/{resourceID}/ocr",
 		"/api/mobile/qr/inspect",
 	} {
 		if _, ok := paths[expected]; !ok {
 			t.Fatalf("expected curated API route %s, got %#v", expected, paths)
 		}
+	}
+}
+
+func TestCourseResourceOCRRouteBuildsCommandArguments(t *testing.T) {
+	route := findAPICommandRoute(t, "/api/courses/{courseID}/resources/{resourceID}/ocr")
+	req := httptest.NewRequest(http.MethodGet, "/api/courses/123/resources/456/ocr?engine=all&timeout=900&gpu=true&docker-platform=linux/amd64&formula=true&verbose=true", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("courseID", "123")
+	rctx.URLParams.Add("resourceID", "456")
+	req = req.WithContext(contextWithRoute(req, rctx))
+
+	args, err := route.Arguments(req, api.CommandRequest{})
+	if err != nil {
+		t.Fatalf("Arguments: %v", err)
+	}
+	if got, want := strings.Join(args, " "), "123 456 --engine all --timeout 900 --docker-platform linux/amd64 --gpu --formula --verbose"; got != want {
+		t.Fatalf("arguments = %q, want %q", got, want)
 	}
 }
 
