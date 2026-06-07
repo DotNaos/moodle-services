@@ -5,17 +5,34 @@ import (
 	"strings"
 )
 
-const EngineAll = "all"
+const (
+	EngineAll     = "all"
+	RuntimeDocker = "docker"
+	RuntimeLocal  = "local"
+)
 
 var defaultProviders = []Provider{
 	{
+		ID:                  "pdftotext",
+		DisplayName:         "Poppler pdftotext",
+		Runtime:             RuntimeLocal,
+		SupportsCPU:         true,
+		SupportsGPU:         false,
+		ExtractsImages:      false,
+		DefaultTimeoutMs:    60 * 1000,
+		ExpectedOutputFiles: []string{"output.md", "text.txt"},
+		EnabledByDefault:    true,
+	},
+	{
 		ID:                  "docling",
 		DisplayName:         "Docling",
+		Runtime:             RuntimeDocker,
 		DockerImage:         "moodle-ocr-docling:local",
 		BuildContext:        "docker/ocr/docling",
 		Dockerfile:          "docker/ocr/docling/Dockerfile",
 		SupportsCPU:         true,
 		SupportsGPU:         false,
+		ExtractsImages:      true,
 		DefaultTimeoutMs:    10 * 60 * 1000,
 		ExpectedOutputFiles: []string{"output.md", "output.html", "output.json"},
 		EnabledByDefault:    true,
@@ -23,11 +40,13 @@ var defaultProviders = []Provider{
 	{
 		ID:                  "marker",
 		DisplayName:         "Marker",
+		Runtime:             RuntimeDocker,
 		DockerImage:         "moodle-ocr-marker:local",
 		BuildContext:        "docker/ocr/marker",
 		Dockerfile:          "docker/ocr/marker/Dockerfile",
 		SupportsCPU:         true,
 		SupportsGPU:         true,
+		ExtractsImages:      true,
 		DefaultTimeoutMs:    15 * 60 * 1000,
 		ExpectedOutputFiles: []string{"output.md"},
 		EnabledByDefault:    true,
@@ -35,11 +54,13 @@ var defaultProviders = []Provider{
 	{
 		ID:                  "paddleocr",
 		DisplayName:         "PaddleOCR PP-StructureV3",
+		Runtime:             RuntimeDocker,
 		DockerImage:         "moodle-ocr-paddleocr:local",
 		BuildContext:        "docker/ocr/paddleocr",
 		Dockerfile:          "docker/ocr/paddleocr/Dockerfile",
 		SupportsCPU:         true,
 		SupportsGPU:         true,
+		ExtractsImages:      true,
 		DefaultTimeoutMs:    20 * 60 * 1000,
 		ExpectedOutputFiles: []string{"output.md", "output.json"},
 		EnabledByDefault:    true,
@@ -47,11 +68,13 @@ var defaultProviders = []Provider{
 	{
 		ID:                  "mineru",
 		DisplayName:         "MinerU",
+		Runtime:             RuntimeDocker,
 		DockerImage:         "moodle-ocr-mineru:local",
 		BuildContext:        "docker/ocr/mineru",
 		Dockerfile:          "docker/ocr/mineru/Dockerfile",
 		SupportsCPU:         true,
 		SupportsGPU:         true,
+		ExtractsImages:      true,
 		DefaultTimeoutMs:    20 * 60 * 1000,
 		ExpectedOutputFiles: []string{"output.md", "output.json"},
 		EnabledByDefault:    true,
@@ -59,11 +82,13 @@ var defaultProviders = []Provider{
 	{
 		ID:                  "olmocr",
 		DisplayName:         "olmOCR",
+		Runtime:             RuntimeDocker,
 		DockerImage:         "moodle-ocr-olmocr:local",
 		BuildContext:        "docker/ocr/olmocr",
 		Dockerfile:          "docker/ocr/olmocr/Dockerfile",
 		SupportsCPU:         true,
 		SupportsGPU:         true,
+		ExtractsImages:      true,
 		DefaultTimeoutMs:    30 * 60 * 1000,
 		ExpectedOutputFiles: []string{"output.md"},
 		EnabledByDefault:    false,

@@ -44,7 +44,7 @@ type printCommandResult struct {
 var printCmd = &cobra.Command{
 	Use:              "print [course] [resource]",
 	Short:            "Print Moodle content to stdout",
-	Long:             "Print Moodle content to stdout.\n\nUse a single course selector such as `moodle print 12345` or `moodle print 0` to print the course outline, or two selectors such as `moodle print current current` to print a file.\n\nAdd --engine to parse a PDF resource through a Docker-backed OCR/document parser.",
+	Long:             "Print Moodle content to stdout.\n\nUse a single course selector such as `moodle print 12345` or `moodle print 0` to print the course outline, or two selectors such as `moodle print current current` to print a file.\n\nAdd --engine to parse a PDF resource through a selectable PDF text/OCR engine.",
 	TraverseChildren: true,
 	Example:          "  moodle print 12345\n  moodle print 0\n  moodle print current current\n  moodle print current-course\n  moodle print current-resource\n  moodle print 0 0\n  moodle print course 12345 67890\n  moodle print course-page 12345\n  moodle print course-page current",
 	Args: func(cmd *cobra.Command, args []string) error {
@@ -93,7 +93,7 @@ var printCmd = &cobra.Command{
 var printCourseCmd = &cobra.Command{
 	Use:               "course <course-id|name|current|0> <resource-id|name|current|0>",
 	Short:             "Print file contents to stdout (PDFs use OCR fallback)",
-	Long:              "Print a single file's contents to stdout.\n\nThe course and file can be specified by ID, name, `current`, `0`, or a positive index.\nPDFs are converted to text and automatically fall back to OCR when native extraction looks poor.\nUse --raw to skip cleanup.\n\nAdd --engine to parse a PDF resource through a Docker-backed OCR/document parser.",
+	Long:              "Print a single file's contents to stdout.\n\nThe course and file can be specified by ID, name, `current`, `0`, or a positive index.\nPDFs are converted to text and automatically fall back to OCR when native extraction looks poor.\nUse --raw to skip cleanup.\n\nAdd --engine to parse a PDF resource through a selectable PDF text/OCR engine.",
 	Example:           "  moodle print course 12345 67890\n  moodle print course current current\n  moodle print course 0 1",
 	Args:              cobra.ExactArgs(2),
 	ValidArgsFunction: completePrintCourseFile,
@@ -203,7 +203,7 @@ func init() {
 	printCmd.PersistentFlags().StringVar(&printPDFVisionModel, "pdf-vision-model", "", "Codex model for --pdf-vision (default: gpt-5.4-mini or MOODLE_PDF_VISION_MODEL)")
 	printCmd.PersistentFlags().IntVar(&printPDFVisionMaxPages, "pdf-vision-max-pages", 0, "Maximum PDF pages to process with --pdf-vision (0 means all pages)")
 	printCmd.PersistentFlags().StringVar(&printPDFVisionCodexCommand, "pdf-vision-codex-command", "", "Codex app-server command for --pdf-vision (default: Codex.app app-server, then codex on PATH)")
-	printCmd.PersistentFlags().StringVar(&printOCREngine, "engine", "", "Docker OCR engine: "+ocr.SupportedEngineList())
+	printCmd.PersistentFlags().StringVar(&printOCREngine, "engine", "", "PDF text/OCR engine: "+ocr.SupportedEngineList())
 	printCmd.PersistentFlags().StringVar(&printOCROutDir, "out", "", "Directory for OCR outputs and artifacts")
 	printCmd.PersistentFlags().StringVar(&printOCRFormat, "format", "markdown", "OCR text output format: markdown|html|json|text")
 	printCmd.PersistentFlags().BoolVar(&printOCRKeepArtifacts, "keep-artifacts", false, "Keep temporary OCR artifacts when --out is not set")

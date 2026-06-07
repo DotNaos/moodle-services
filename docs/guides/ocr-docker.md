@@ -1,8 +1,8 @@
 # Docker OCR
 
-Use this when you want Docker-backed PDF parsing for Moodle PDFs.
+Use this when you want selectable PDF text extraction or Docker-backed PDF parsing for Moodle PDFs.
 
-The Moodle app does not install Python, OCR, or ML packages on the host. It only calls Docker when OCR is requested.
+The lightweight `pdftotext` engine runs on the host and needs Poppler's `pdftotext` binary. The heavier document/OCR engines do not install Python, OCR, or ML packages on the host; they call Docker only when those engines are requested.
 
 ## Build provider images
 
@@ -25,6 +25,7 @@ export OCR_DOCKER_PLATFORM=linux/amd64
 ## Run one engine
 
 ```sh
+moodle print <course> <resource> --engine pdftotext --out ./out/pdftotext
 moodle print <course> <resource> --engine docling --out ./out/docling
 moodle print <course> <resource> --engine marker --out ./out/marker
 moodle print <course> <resource> --engine paddleocr --out ./out/paddleocr
@@ -32,6 +33,8 @@ moodle print <course> <resource> --engine mineru --out ./out/mineru
 ```
 
 The normal print command is unchanged when `--engine` is not set.
+
+`pdftotext` is not OCR. It is a fast baseline for PDFs that already contain text and it is included in `--engine all`.
 
 ## Compare engines
 

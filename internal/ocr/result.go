@@ -48,12 +48,12 @@ func ParseOutput(provider Provider, outputDir string, exitCode int, timedOut boo
 		}
 	}
 	result.Images = listImages(filepath.Join(outputDir, "images"))
-	result.Warnings = append(result.Warnings, DetectWarnings(result)...)
+	result.Warnings = append(result.Warnings, DetectWarnings(provider, result)...)
 	result.Warnings = uniqueStrings(result.Warnings)
 	return result
 }
 
-func DetectWarnings(result RunResult) []string {
+func DetectWarnings(provider Provider, result RunResult) []string {
 	var warnings []string
 	markdown := strings.TrimSpace(result.Markdown)
 	if markdown == "" {
@@ -61,7 +61,7 @@ func DetectWarnings(result RunResult) []string {
 	} else if len([]rune(markdown)) < 80 {
 		warnings = append(warnings, "empty or very short Markdown")
 	}
-	if len(result.Images) == 0 {
+	if provider.ExtractsImages && len(result.Images) == 0 {
 		warnings = append(warnings, "no images extracted")
 	}
 	combined := strings.ToLower(strings.Join([]string{result.Markdown, result.HTML, result.Text}, "\n"))

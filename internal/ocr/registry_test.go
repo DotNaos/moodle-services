@@ -7,10 +7,17 @@ func TestResolveProvidersAllExcludesOlmOCRWithoutGPU(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveProviders: %v", err)
 	}
+	foundPdftotext := false
 	for _, provider := range providers {
 		if provider.ID == "olmocr" {
 			t.Fatalf("olmocr should not be enabled by default")
 		}
+		if provider.ID == "pdftotext" {
+			foundPdftotext = true
+		}
+	}
+	if !foundPdftotext {
+		t.Fatalf("pdftotext should be enabled by default")
 	}
 }
 
@@ -34,6 +41,19 @@ func TestProviderByID(t *testing.T) {
 	}
 	if provider.DockerImage == "" || provider.DefaultTimeoutMs == 0 {
 		t.Fatalf("provider metadata is incomplete: %#v", provider)
+	}
+}
+
+func TestProviderByIDPdftotext(t *testing.T) {
+	provider, ok := ProviderByID("pdftotext")
+	if !ok {
+		t.Fatalf("expected pdftotext provider")
+	}
+	if provider.Runtime != RuntimeLocal {
+		t.Fatalf("expected local runtime, got %#v", provider)
+	}
+	if provider.DockerImage != "" {
+		t.Fatalf("pdftotext should not require a docker image: %#v", provider)
 	}
 }
 

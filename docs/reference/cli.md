@@ -43,6 +43,7 @@ moodle open resource <course-id|name|current|0> <resource-id|name|current|0>
 moodle print <course-id|name|index|0>
 moodle print course-page <course-id|name|current|0>
 moodle print course <course-id|name|current|0> <resource-id|name|current|0> --pdf-vision
+moodle print <course-id|name|current|0> <resource-id|name|current|0> --engine pdftotext --out ./out/pdftotext
 moodle print <course-id|name|current|0> <resource-id|name|current|0> --engine docling --out ./out/docling
 moodle print <course-id|name|current|0> <resource-id|name|current|0> --engine all --out ./out/ocr-comparison --keep-artifacts
 ```
@@ -53,7 +54,7 @@ pages. It does not call the OpenAI API directly. Use
 limit a test run to the first pages, and `--pdf-vision-codex-command <command>`
 or `MOODLE_CODEX_APP_SERVER_COMMAND` to override the app-server command.
 
-Docker OCR engines are `docling`, `marker`, `paddleocr`, `mineru`, `olmocr`, and `all`. Without `--engine`, `moodle print` uses the existing text extraction path.
+PDF text/OCR engines are `pdftotext`, `docling`, `marker`, `paddleocr`, `mineru`, `olmocr`, and `all`. `pdftotext` runs locally and is useful for PDFs that already contain selectable text. The other engines are Docker-backed document parsers/OCR engines. Without `--engine`, `moodle print` uses the existing text extraction path.
 
 ## Download files
 

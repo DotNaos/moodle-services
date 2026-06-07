@@ -125,8 +125,8 @@ func buildAPICommandRoutes() []api.CommandRoute {
 			APIPath:     "/api/courses/{courseID}/resources/{resourceID}/ocr",
 			Method:      http.MethodGet,
 			CommandPath: []string{"print", "course"},
-			Summary:     "Run Docker OCR for a PDF resource",
-			Description: "Parses one Moodle PDF resource through a Docker-backed OCR/document parser. Docker is checked only when this endpoint is called.",
+			Summary:     "Run PDF text/OCR extraction for a PDF resource",
+			Description: "Parses one Moodle PDF resource through a selectable PDF text/OCR engine. Docker is checked only for Docker-backed engines.",
 			Arguments: func(r *http.Request, _ api.CommandRequest) ([]string, error) {
 				courseID := strings.TrimSpace(chi.URLParam(r, "courseID"))
 				resourceID := strings.TrimSpace(chi.URLParam(r, "resourceID"))
