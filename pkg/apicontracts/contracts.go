@@ -100,7 +100,9 @@ type WebexRecordingsResponse struct {
 type StudyPipelineResponse struct {
 	CourseID         string                  `json:"courseId"`
 	Status           string                  `json:"status"`
+	Stage            string                  `json:"stage,omitempty"`
 	CreatedAt        string                  `json:"createdAt"`
+	ArtifactRoot     string                  `json:"artifactRoot,omitempty"`
 	Summary          StudyPipelineSummary    `json:"summary"`
 	Materials        []StudyPipelineMaterial `json:"materials"`
 	TaskLinks        []StudyPipelineTaskLink `json:"taskLinks"`
@@ -133,4 +135,66 @@ type StudyPipelineTaskLink struct {
 	Task     StudyPipelineMaterial  `json:"task"`
 	Solution *StudyPipelineMaterial `json:"solution,omitempty"`
 	Status   string                 `json:"status"`
+}
+
+type StudyPipelineTaskViewResponse struct {
+	CourseID       string                    `json:"courseId"`
+	GeneratedAt    string                    `json:"generatedAt"`
+	Source         string                    `json:"source"`
+	ScriptMarkdown string                    `json:"scriptMarkdown"`
+	Sheets         []StudyPipelineTaskSheet  `json:"sheets"`
+	Resources      []StudyPipelineViewSource `json:"resources"`
+	Progress       StudyPipelineProgress     `json:"progress"`
+}
+
+type StudyPipelineTaskSheet struct {
+	ResourceID         string                  `json:"resourceId"`
+	Title              string                  `json:"title"`
+	Kind               string                  `json:"kind"`
+	SolutionResourceID string                  `json:"solutionResourceId,omitempty"`
+	SolutionTitle      string                  `json:"solutionTitle,omitempty"`
+	SolutionMarkdown   string                  `json:"solutionMarkdown,omitempty"`
+	Tasks              []StudyPipelineTaskItem `json:"tasks"`
+}
+
+type StudyPipelineTaskItem struct {
+	TaskID           string                  `json:"taskId"`
+	SourceResourceID string                  `json:"sourceResourceId"`
+	Title            string                  `json:"title"`
+	PromptMarkdown   string                  `json:"promptMarkdown"`
+	Parts            []StudyPipelineTaskPart `json:"parts"`
+	LatestAttempt    *StudyPipelineAttempt   `json:"latestAttempt,omitempty"`
+	Status           string                  `json:"status"`
+}
+
+type StudyPipelineTaskPart struct {
+	ID             string `json:"id"`
+	Label          string `json:"label,omitempty"`
+	PromptMarkdown string `json:"promptMarkdown"`
+}
+
+type StudyPipelineAttempt struct {
+	UserAnswer string               `json:"userAnswer"`
+	Verdict    StudyPipelineVerdict `json:"verdict"`
+}
+
+type StudyPipelineVerdict struct {
+	IsCorrect         bool     `json:"isCorrect"`
+	FeedbackMarkdown  string   `json:"feedbackMarkdown"`
+	Mistakes          []string `json:"mistakes"`
+	SuggestedNextStep string   `json:"suggestedNextStep,omitempty"`
+}
+
+type StudyPipelineViewSource struct {
+	ResourceID string `json:"resourceId"`
+	Title      string `json:"title"`
+	Kind       string `json:"kind"`
+}
+
+type StudyPipelineProgress struct {
+	Open        int `json:"open"`
+	Checked     int `json:"checked"`
+	Correct     int `json:"correct"`
+	Wrong       int `json:"wrong"`
+	NeedsReview int `json:"needsReview"`
 }

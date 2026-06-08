@@ -16,6 +16,10 @@ FROM debian:bookworm-slim
 # Install minimum system dependencies required by playwright/chromium and the Docker CLI used by OCR providers.
 RUN apt-get update && apt-get install -y ca-certificates \
     docker.io \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-deu \
+    tesseract-ocr-eng \
     libnss3 \
     libnspr4 \
     libatk1.0-0 \

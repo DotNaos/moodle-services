@@ -65,6 +65,30 @@
       "destination": "/api/auth_qr_exchange?codex=state"
     },
     {
+      "source": "/api/codex/status",
+      "destination": "/api/codex?action=status"
+    },
+    {
+      "source": "/api/codex/auth",
+      "destination": "/api/codex?action=auth"
+    },
+    {
+      "source": "/api/codex/auth/callback",
+      "destination": "/api/codex?action=auth-callback"
+    },
+    {
+      "source": "/api/codex/models",
+      "destination": "/api/codex?action=models"
+    },
+    {
+      "source": "/api/codex/files",
+      "destination": "/api/codex?action=files"
+    },
+    {
+      "source": "/api/codex/run",
+      "destination": "/api/codex?action=run"
+    },
+    {
       "source": "/api/courses/:courseId/materials/:resourceId/text",
       "destination": "/api/material_text?courseId=:courseId&resourceId=:resourceId"
     },
@@ -79,6 +103,38 @@
     {
       "source": "/api/courses/:courseId/study-pipeline",
       "destination": "/api/materials?route=study-pipeline&courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/status",
+      "destination": "/api/materials?route=study-pipeline&action=status&courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/raw",
+      "destination": "/api/materials?route=study-pipeline&action=stage&stage=raw&courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/extracted",
+      "destination": "/api/materials?route=study-pipeline&action=stage&stage=extracted&courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/curated",
+      "destination": "/api/materials?route=study-pipeline&action=stage&stage=curated&courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/script",
+      "destination": "/api/materials?route=study-pipeline&action=script&courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/task-view",
+      "destination": "/api/materials?route=study-pipeline&action=task-view&courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/tasks/:taskId/chat",
+      "destination": "/api/materials?route=study-pipeline&action=chat&courseId=:courseId&taskId=:taskId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/tasks/:taskId/attempts",
+      "destination": "/api/materials?route=study-pipeline&action=attempts&courseId=:courseId&taskId=:taskId"
     },
     {
       "source": "/api/courses/:courseId/recordings",

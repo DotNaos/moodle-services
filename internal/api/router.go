@@ -13,6 +13,7 @@ import (
 
 	serverless "github.com/DotNaos/moodle-services/api"
 	"github.com/DotNaos/moodle-services/internal/moodle"
+	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 	"github.com/DotNaos/moodle-services/pkg/studypipeline"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -69,8 +70,15 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses", coursesHandler(opts))
 	router.Get("/api/categories", categoriesHandler(opts))
 	router.Get("/api/courses/{courseID}/resources", courseResourcesHandler(opts))
-	router.Get("/api/courses/{courseID}/study-pipeline", studyPipelineRoute(opts, "planned"))
-	router.Post("/api/courses/{courseID}/study-pipeline", studyPipelineRoute(opts, "created"))
+	router.Get("/api/courses/{courseID}/study-pipeline", studyPipelineStatusRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline", studyPipelineStageRoute(opts, "curated"))
+	router.Post("/api/courses/{courseID}/study-pipeline/{stage}", studyPipelineStageRoute(opts, ""))
+	router.Get("/api/courses/{courseID}/study-pipeline/status", studyPipelineStatusRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/script", studyPipelineScriptRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/task-view", studyPipelineTaskViewRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/attempts", studyPipelineAttemptRoute(opts))
 	registerServerlessParityRoutes(router)
 	registerCommandRoutes(router, opts)
 
@@ -98,6 +106,12 @@ func registerServerlessParityRoutes(router *chi.Mux) {
 	router.HandleFunc("/api/auth/clerk/mobile/bridge/status", withQuery(serverless.AuthQrExchange, "bridge", "status"))
 	router.HandleFunc("/api/auth/clerk/mobile/bridge/complete", withQuery(serverless.AuthQrExchange, "bridge", "complete"))
 	router.HandleFunc("/api/auth/clerk/codex/state", withQuery(serverless.AuthQrExchange, "codex", "state"))
+	router.HandleFunc("/api/codex/status", withQuery(serverless.Codex, "action", "status"))
+	router.HandleFunc("/api/codex/auth", withQuery(serverless.Codex, "action", "auth"))
+	router.HandleFunc("/api/codex/auth/callback", withQuery(serverless.Codex, "action", "auth-callback"))
+	router.HandleFunc("/api/codex/models", withQuery(serverless.Codex, "action", "models"))
+	router.HandleFunc("/api/codex/files", withQuery(serverless.Codex, "action", "files"))
+	router.HandleFunc("/api/codex/run", withQuery(serverless.Codex, "action", "run"))
 	router.HandleFunc("/api/courses/{courseID}/materials", withPathQuery(serverless.Materials, map[string]string{
 		"courseID": "courseId",
 	}))
@@ -158,8 +172,8 @@ func localCORSMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func studyPipelineRoute(opts ServerOptions, status string) http.HandlerFunc {
-	localHandler := studyPipelineHandler(opts, status)
+func studyPipelineStatusRoute(opts ServerOptions) http.HandlerFunc {
+	localHandler := studyPipelineStatusHandler(opts)
 	webHandler := withRouteQuery(serverless.Materials, map[string]string{
 		"route": "study-pipeline",
 	}, map[string]string{
@@ -174,7 +188,87 @@ func studyPipelineRoute(opts ServerOptions, status string) http.HandlerFunc {
 	}
 }
 
-func studyPipelineHandler(opts ServerOptions, status string) http.HandlerFunc {
+func studyPipelineStageRoute(opts ServerOptions, fallbackStage string) http.HandlerFunc {
+	localHandler := studyPipelineStageHandler(opts, fallbackStage)
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": "stage",
+		"stage":  fallbackStage,
+	}, map[string]string{
+		"courseID": "courseId",
+		"stage":    "stage",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		localHandler(w, r)
+	}
+}
+
+func studyPipelineScriptRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineReadRoute(opts, "script")
+}
+
+func studyPipelineTaskViewRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineReadRoute(opts, "task-view")
+}
+
+func studyPipelineChatRoute(opts ServerOptions) http.HandlerFunc {
+	localHandler := studyPipelineTaskStateHandler(opts, "chat")
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": "chat",
+	}, map[string]string{
+		"courseID": "courseId",
+		"taskID":   "taskId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		localHandler(w, r)
+	}
+}
+
+func studyPipelineAttemptRoute(opts ServerOptions) http.HandlerFunc {
+	localHandler := studyPipelineTaskStateHandler(opts, "attempts")
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": "attempts",
+	}, map[string]string{
+		"courseID": "courseId",
+		"taskID":   "taskId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		localHandler(w, r)
+	}
+}
+
+func studyPipelineReadRoute(opts ServerOptions, action string) http.HandlerFunc {
+	localHandler := studyPipelineReadHandler(opts, action)
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": action,
+	}, map[string]string{
+		"courseID": "courseId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		localHandler(w, r)
+	}
+}
+
+func studyPipelineStatusHandler(opts ServerOptions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		courseID := strings.TrimSpace(chi.URLParam(r, "courseID"))
 		if courseID == "" {
@@ -193,8 +287,141 @@ func studyPipelineHandler(opts ServerOptions, status string) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, studypipeline.Build(courseID, resources, status, time.Now()))
+		writeJSON(w, http.StatusOK, studypipeline.Status(courseID, resources, studypipeline.RunOptions{
+			Now: time.Now(),
+		}))
 	}
+}
+
+func studyPipelineStageHandler(opts ServerOptions, fallbackStage string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		courseID, resources, downloader, ok := studyPipelineContext(w, r, opts)
+		if !ok {
+			return
+		}
+		stage := strings.TrimSpace(chi.URLParam(r, "stage"))
+		if stage == "" {
+			stage = fallbackStage
+		}
+		response, err := studypipeline.RunStage(courseID, resources, stage, studypipeline.RunOptions{
+			Downloader: downloader,
+			Now:        time.Now(),
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if err := recordLocalStudyPipeline(r.Context(), response); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	}
+}
+
+func studyPipelineReadHandler(opts ServerOptions, action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		courseID, resources, downloader, ok := studyPipelineContext(w, r, opts)
+		if !ok {
+			return
+		}
+		options := studypipeline.RunOptions{Downloader: downloader, Now: time.Now()}
+		switch action {
+		case "script":
+			script, err := studypipeline.LoadScript(courseID, resources, options)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"courseId": courseID, "scriptMarkdown": script})
+		case "task-view":
+			includeScript := r.URL.Query().Get("includeScript") != "0"
+			view, err := studypipeline.LoadTaskView(courseID, resources, includeScript, options)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, view)
+		default:
+			writeError(w, http.StatusNotFound, fmt.Errorf("unknown study pipeline action %q", action))
+		}
+	}
+}
+
+func studyPipelineTaskStateHandler(opts ServerOptions, action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		courseID := strings.TrimSpace(chi.URLParam(r, "courseID"))
+		taskID := strings.TrimSpace(chi.URLParam(r, "taskID"))
+		if courseID == "" || taskID == "" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("courseID and taskID are required"))
+			return
+		}
+		if action == "chat" {
+			if r.Method == http.MethodGet {
+				messages, err := studypipeline.Messages("", courseID, taskID)
+				if err != nil && !errors.Is(err, os.ErrNotExist) {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"messages": messages})
+				return
+			}
+			var input struct {
+				Role string `json:"role"`
+				Text string `json:"text"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			messages, err := studypipeline.AppendMessage("", courseID, taskID, input.Role, input.Text)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"messages": messages})
+			return
+		}
+
+		var input contract.StudyPipelineAttempt
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			var wrapped struct {
+				UserAnswer string                        `json:"userAnswer"`
+				Verdict    contract.StudyPipelineVerdict `json:"verdict"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&wrapped); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			input.UserAnswer = wrapped.UserAnswer
+			input.Verdict = wrapped.Verdict
+		}
+		if err := studypipeline.RecordAttempt("", courseID, taskID, input); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
+	}
+}
+
+func studyPipelineContext(w http.ResponseWriter, r *http.Request, opts ServerOptions) (string, []moodle.Resource, studypipeline.Downloader, bool) {
+	courseID := strings.TrimSpace(chi.URLParam(r, "courseID"))
+	if courseID == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("courseID is required"))
+		return "", nil, nil, false
+	}
+	client, err := opts.ClientProvider()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return "", nil, nil, false
+	}
+	resources, _, err := client.FetchCourseResources(courseID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return "", nil, nil, false
+	}
+	downloader, _ := client.(studypipeline.Downloader)
+	return courseID, resources, downloader, true
 }
 
 func resolveLogWriter(writer io.Writer) io.Writer {

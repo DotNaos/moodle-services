@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/DotNaos/moodle-services/internal/moodle"
+	"github.com/DotNaos/moodle-services/pkg/studypipeline"
 )
 
 type stubClient struct {
@@ -44,6 +45,7 @@ func (s stubClient) FetchCategories() ([]moodle.Category, error) {
 }
 
 func TestStudyPipelineHandlerBuildsCoursePlan(t *testing.T) {
+	t.Setenv(studypipeline.EnvArtifactRoot, t.TempDir())
 	router, err := NewRouter(ServerOptions{
 		ClientProvider: func() (Client, error) {
 			return stubClient{
@@ -78,7 +80,7 @@ func TestStudyPipelineHandlerBuildsCoursePlan(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.Status != "created" || payload.Summary.Tasks != 1 || payload.Summary.LinkedSolutions != 1 {
+	if payload.Status != "curated-ready" || payload.Summary.Tasks != 1 || payload.Summary.LinkedSolutions != 1 {
 		t.Fatalf("unexpected payload: %#v", payload)
 	}
 }
