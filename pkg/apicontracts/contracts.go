@@ -1,6 +1,8 @@
 package apicontracts
 
 import (
+	"encoding/json"
+
 	"github.com/DotNaos/moodle-services/internal/moodle"
 	"github.com/DotNaos/moodle-services/internal/moodleservice"
 	"github.com/DotNaos/moodle-services/internal/store"
@@ -220,6 +222,35 @@ type CodexReasoningOption struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
+}
+
+type CodexRunRequest struct {
+	Prompt          string          `json:"prompt"`
+	Images          []CodexRunImage `json:"images,omitempty"`
+	Model           string          `json:"model,omitempty"`
+	ReasoningEffort string          `json:"reasoningEffort,omitempty"`
+	OutputSchema    json.RawMessage `json:"outputSchema,omitempty"`
+	Stream          bool            `json:"stream,omitempty"`
+}
+
+type CodexRunImage struct {
+	Name    string `json:"name"`
+	DataURL string `json:"dataUrl"`
+}
+
+type CodexRunResponse struct {
+	ThreadID      *string         `json:"threadId"`
+	FinalResponse string          `json:"finalResponse"`
+	Actions       []CodexUIAction `json:"actions"`
+}
+
+type CodexUIAction struct {
+	Type       string   `json:"type"`
+	CourseID   *string  `json:"courseId,omitempty"`
+	MaterialID *string  `json:"materialId,omitempty"`
+	ResourceID *string  `json:"resourceId,omitempty"`
+	Page       *float64 `json:"page,omitempty"`
+	Reason     *string  `json:"reason,omitempty"`
 }
 
 type StudyPipelineTaskPart struct {

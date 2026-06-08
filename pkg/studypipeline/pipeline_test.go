@@ -250,6 +250,37 @@ func TestReadCodexDeviceAuthStartParsesCLIOutput(t *testing.T) {
 	}
 }
 
+func TestParseCodexChatOutputUsesAnswerAndValidActions(t *testing.T) {
+	courseID := "22585"
+	resourceID := "949833"
+	reason := "Open the task sheet the user asked for."
+	output := `{"answer":"Opening the task sheet.","actions":[{"type":"open_resource","courseId":"22585","resourceId":"949833","reason":"Open the task sheet the user asked for."},{"type":"open_resource","courseId":null,"resourceId":"bad"},{"type":"unknown","courseId":"22585"}]}`
+
+	result, err := parseCodexChatOutput(output)
+	if err != nil {
+		t.Fatalf("parseCodexChatOutput: %v", err)
+	}
+	if result.FinalResponse != "Opening the task sheet." {
+		t.Fatalf("unexpected response: %q", result.FinalResponse)
+	}
+	if len(result.Actions) != 1 {
+		t.Fatalf("expected one valid action, got %#v", result.Actions)
+	}
+	if result.Actions[0].Type != "open_resource" || *result.Actions[0].CourseID != courseID || *result.Actions[0].ResourceID != resourceID || *result.Actions[0].Reason != reason {
+		t.Fatalf("unexpected action: %#v", result.Actions[0])
+	}
+}
+
+func TestParseCodexChatOutputFallsBackToText(t *testing.T) {
+	result, err := parseCodexChatOutput("Plain answer from Codex")
+	if err != nil {
+		t.Fatalf("parseCodexChatOutput: %v", err)
+	}
+	if result.FinalResponse != "Plain answer from Codex" || len(result.Actions) != 0 {
+		t.Fatalf("unexpected fallback result: %#v", result)
+	}
+}
+
 func writeExtractedFixture(t *testing.T, root string, courseID string, dirName string, name string, body string) {
 	t.Helper()
 	path := filepath.Join(root, "courses", safeSegment(courseID), "extracted", dirName, safeSegment(name)+".mdx")
