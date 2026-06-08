@@ -179,6 +179,54 @@ func TestRefineContentWritesSeparateImprovedArtifact(t *testing.T) {
 	}
 }
 
+func TestRefineContentPassesCustomPromptToRefiner(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22585"
+	resources := []moodle.Resource{
+		{ID: "1", Name: "CNN", FileType: "pdf", SectionName: "Week 1"},
+	}
+	writeExtractedFixture(t, root, courseID, "slides", "1-CNN", "extracted convolution text")
+	refiner := &captureRefiner{content: "## CNN\n\nCleaned text.", model: "test-model"}
+
+	_, err := RefineContent(context.Background(), courseID, resources, contract.StudyPipelineRefineRequest{
+		Kind:         "script-section",
+		TargetID:     "1",
+		CustomPrompt: "Bitte deutsche Begriffe bevorzugen und wichtige Formeln stärker strukturieren.",
+	}, RunOptions{
+		Root:    root,
+		Now:     time.Unix(0, 0),
+		UserID:  "user-1",
+		Refiner: refiner,
+	})
+	if err != nil {
+		t.Fatalf("RefineContent: %v", err)
+	}
+	if refiner.input.CustomPrompt != "Bitte deutsche Begriffe bevorzugen und wichtige Formeln stärker strukturieren." {
+		t.Fatalf("custom prompt was not forwarded: %q", refiner.input.CustomPrompt)
+	}
+}
+
+func TestBuildRefinePromptIncludesCustomPromptAsGuidance(t *testing.T) {
+	prompt := buildRefinePrompt(RefineInput{
+		CourseID:     "22585",
+		Kind:         "task",
+		TargetID:     "task-1",
+		Title:        "Aufgabe",
+		CustomPrompt: "Mach die Aufgabenstellung prüfungsfreundlicher.",
+		Content:      "Original source text.",
+	})
+
+	if !strings.Contains(prompt, "Additional user instructions for this refinement:") {
+		t.Fatalf("custom prompt section missing: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Mach die Aufgabenstellung prüfungsfreundlicher.") {
+		t.Fatalf("custom prompt missing: %s", prompt)
+	}
+	if !strings.Contains(prompt, "Do not use them to add facts") {
+		t.Fatalf("anti-hallucination guard missing: %s", prompt)
+	}
+}
+
 func TestCuratedStageRemovesStaleGeneratedTaskFiles(t *testing.T) {
 	root := t.TempDir()
 	courseID := "19489"
@@ -328,6 +376,17 @@ type fakeRefiner struct {
 }
 
 func (f fakeRefiner) Refine(context.Context, RefineInput) (RefineOutput, error) {
+	return RefineOutput{Content: f.content, Model: f.model}, nil
+}
+
+type captureRefiner struct {
+	content string
+	input   RefineInput
+	model   string
+}
+
+func (f *captureRefiner) Refine(_ context.Context, input RefineInput) (RefineOutput, error) {
+	f.input = input
 	return RefineOutput{Content: f.content, Model: f.model}, nil
 }
 

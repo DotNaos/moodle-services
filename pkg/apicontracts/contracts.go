@@ -187,6 +187,7 @@ type StudyPipelineRefineRequest struct {
 	TargetID        string `json:"targetId"`
 	Model           string `json:"model,omitempty"`
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	CustomPrompt    string `json:"customPrompt,omitempty"`
 }
 
 type StudyPipelineRefineResponse struct {
