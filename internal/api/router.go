@@ -481,7 +481,7 @@ func streamStudyPipelineRefine(w http.ResponseWriter, r *http.Request, courseID 
 	if err != nil {
 		emit(contract.StudyPipelineRefineEvent{
 			Type:  "error",
-			Error: err.Error(),
+			Error: studyRefineErrorMessage(err),
 		})
 		return
 	}
@@ -496,6 +496,17 @@ func streamStudyPipelineRefine(w http.ResponseWriter, r *http.Request, courseID 
 
 func acceptsNDJSON(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "application/x-ndjson")
+}
+
+func studyRefineErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	if strings.Contains(message, "401 Unauthorized") || strings.Contains(message, "Missing bearer") || strings.Contains(message, "Not logged in") {
+		return "Codex is not connected for this user. Connect ChatGPT before improving content."
+	}
+	return message
 }
 
 func studyPipelineContext(w http.ResponseWriter, r *http.Request, opts ServerOptions) (string, []moodle.Resource, studypipeline.Downloader, bool) {
