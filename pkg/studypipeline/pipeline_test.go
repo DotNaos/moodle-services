@@ -281,6 +281,17 @@ func TestParseCodexChatOutputFallsBackToText(t *testing.T) {
 	}
 }
 
+func TestDockerHostMountPathTranslatesStudyDataPath(t *testing.T) {
+	t.Setenv("MOODLE_DOCKER_CONTAINER_DATA_DIR", "/data")
+	t.Setenv("MOODLE_DOCKER_HOST_DATA_DIR", "/opt/platform/apps/moodle-staging/services-data")
+
+	got := dockerHostMountPath("/data/study/codex-users/user_123")
+	want := "/opt/platform/apps/moodle-staging/services-data/study/codex-users/user_123"
+	if got != want {
+		t.Fatalf("dockerHostMountPath = %q, want %q", got, want)
+	}
+}
+
 func writeExtractedFixture(t *testing.T, root string, courseID string, dirName string, name string, body string) {
 	t.Helper()
 	path := filepath.Join(root, "courses", safeSegment(courseID), "extracted", dirName, safeSegment(name)+".mdx")

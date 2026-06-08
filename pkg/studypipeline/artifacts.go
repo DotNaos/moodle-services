@@ -887,7 +887,7 @@ func StartCodexDeviceAuth(ctx context.Context, userID string, root string) (Code
 		"--user", "0:0",
 		"-e", "HOME=/home/codex",
 		"-e", "CODEX_HOME=/home/codex/.codex",
-		"-v", stateRoot + ":/home/codex/.codex",
+		"-v", dockerHostMountPath(stateRoot) + ":/home/codex/.codex",
 		image,
 		"codex", "login", "--device-auth",
 	}
@@ -1133,7 +1133,7 @@ func runDockerCodexWithOptions(ctx context.Context, options dockerCodexOptions) 
 		"-e", "CODEX_OUTPUT_SCHEMA_FILE=/home/codex/.codex/" + filepath.Base(schemaPath),
 		"-e", "HOME=/home/codex",
 		"-e", "CODEX_HOME=/home/codex/.codex",
-		"-v", stateRoot + ":/home/codex/.codex",
+		"-v", dockerHostMountPath(stateRoot) + ":/home/codex/.codex",
 		options.Image,
 		"sh", "-lc", options.Command,
 	}
