@@ -281,6 +281,18 @@ func TestParseCodexChatOutputFallsBackToText(t *testing.T) {
 	}
 }
 
+func TestSelectDefaultCodexChatModelUsesCatalog(t *testing.T) {
+	model, effort := selectDefaultCodexChatModel(contract.CodexModelCatalogResponse{
+		Models: []contract.CodexModelOption{{
+			ID:                     "gpt-5.5",
+			DefaultReasoningEffort: "high",
+		}},
+	}, "")
+	if model != "gpt-5.5" || effort != "high" {
+		t.Fatalf("default model = %q/%q, want gpt-5.5/high", model, effort)
+	}
+}
+
 func TestDockerHostMountPathTranslatesStudyDataPath(t *testing.T) {
 	t.Setenv("MOODLE_DOCKER_CONTAINER_DATA_DIR", "/data")
 	t.Setenv("MOODLE_DOCKER_HOST_DATA_DIR", "/opt/platform/apps/moodle-staging/services-data")
