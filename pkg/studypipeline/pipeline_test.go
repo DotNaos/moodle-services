@@ -225,6 +225,31 @@ func TestExtractedTextDoesNotUseRawPDFBytesWhenExtractionFails(t *testing.T) {
 	}
 }
 
+func TestReadCodexDeviceAuthStartParsesCLIOutput(t *testing.T) {
+	output := strings.Join([]string{
+		"Welcome to Codex [v\x1b[90m0.130.0\x1b[0m]",
+		"Follow these steps to sign in with ChatGPT using device code authorization:",
+		"1. Open this link in your browser and sign in to your account",
+		"   \x1b[94mhttps://auth.openai.com/codex/device\x1b[0m",
+		"2. Enter this one-time code \x1b[90m(expires in 15 minutes)\x1b[0m",
+		"   \x1b[94mBGWE-JHZCL\x1b[0m",
+	}, "\n")
+
+	start, err := readCodexDeviceAuthStart(strings.NewReader(output))
+	if err != nil {
+		t.Fatalf("readCodexDeviceAuthStart: %v", err)
+	}
+	if start.VerificationURI != "https://auth.openai.com/codex/device" {
+		t.Fatalf("unexpected verification URI: %q", start.VerificationURI)
+	}
+	if start.UserCode != "BGWE-JHZCL" {
+		t.Fatalf("unexpected user code: %q", start.UserCode)
+	}
+	if start.ExpiresInSeconds != 15*60 {
+		t.Fatalf("unexpected expiry: %d", start.ExpiresInSeconds)
+	}
+}
+
 func writeExtractedFixture(t *testing.T, root string, courseID string, dirName string, name string, body string) {
 	t.Helper()
 	path := filepath.Join(root, "courses", safeSegment(courseID), "extracted", dirName, safeSegment(name)+".mdx")

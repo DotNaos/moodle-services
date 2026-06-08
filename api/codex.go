@@ -29,9 +29,33 @@ func Codex(w http.ResponseWriter, r *http.Request) {
 			"provider":      "moodle-services",
 			"detail":        detail,
 		})
-	case "auth", "auth-callback":
+	case "auth":
+		clerkUserID, ok := authorizeInternalRequest(w, r, true)
+		if !ok {
+			return
+		}
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		start, err := studypipeline.StartCodexDeviceAuth(r.Context(), clerkUserID, "")
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		if start.Authenticated {
+			svc.WriteJSON(w, http.StatusOK, map[string]any{"authenticated": true})
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, map[string]any{
+			"type":             "device_code",
+			"verificationUri":  start.VerificationURI,
+			"userCode":         start.UserCode,
+			"expiresInSeconds": start.ExpiresInSeconds,
+		})
+	case "auth-callback":
 		svc.WriteJSON(w, http.StatusNotImplemented, map[string]string{
-			"error": "Codex authentication has moved to moodle-services, but the Codex runner is not configured on this deployment yet.",
+			"error": "Codex device-code sign-in does not use a callback endpoint.",
 		})
 	case "models":
 		clerkUserID, ok := authorizeInternalRequest(w, r, true)
