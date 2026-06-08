@@ -1080,29 +1080,66 @@ func stringSliceValue(value any) []string {
 }
 
 func runDockerCodex(ctx context.Context, image string, command string, model string, reasoningEffort string, artifactRoot string, userID string, prompt string, emit func(contract.StudyPipelineRefineEvent)) (string, error) {
-	stateRoot, err := prepareCodexStateRoot(firstNonEmpty(artifactRoot, ArtifactRootFromEnv()), userID)
+	return runDockerCodexWithOptions(ctx, dockerCodexOptions{
+		Image:           image,
+		Command:         command,
+		Model:           model,
+		ReasoningEffort: reasoningEffort,
+		ArtifactRoot:    artifactRoot,
+		UserID:          userID,
+		Prompt:          prompt,
+		OutputPrefix:    "refine",
+		Emit:            emit,
+	})
+}
+
+type dockerCodexOptions struct {
+	Image           string
+	Command         string
+	Model           string
+	ReasoningEffort string
+	ArtifactRoot    string
+	UserID          string
+	Prompt          string
+	OutputPrefix    string
+	OutputSchema    []byte
+	Emit            func(contract.StudyPipelineRefineEvent)
+}
+
+func runDockerCodexWithOptions(ctx context.Context, options dockerCodexOptions) (string, error) {
+	stateRoot, err := prepareCodexStateRoot(firstNonEmpty(options.ArtifactRoot, ArtifactRootFromEnv()), options.UserID)
 	if err != nil {
 		return "", err
 	}
-	outputPath := filepath.Join(stateRoot, "last-refine-"+safeSegment(firstNonEmpty(model, "catalog"))+".md")
-	if prompt != "" {
+	outputPrefix := safeSegment(firstNonEmpty(options.OutputPrefix, "codex"))
+	outputPath := filepath.Join(stateRoot, "last-"+outputPrefix+"-"+safeSegment(firstNonEmpty(options.Model, "default"))+".md")
+	schemaPath := filepath.Join(stateRoot, "last-"+outputPrefix+"-schema.json")
+	if options.Prompt != "" {
 		_ = os.Remove(outputPath)
+	}
+	if len(options.OutputSchema) > 0 {
+		if err := os.WriteFile(schemaPath, options.OutputSchema, 0o600); err != nil {
+			return "", err
+		}
+	} else {
+		_ = os.Remove(schemaPath)
 	}
 	args := []string{
 		"run", "--rm", "-i",
 		"--user", "0:0",
-		"-e", "CODEX_MODEL=" + model,
-		"-e", "CODEX_REASONING_EFFORT=" + sanitizeCodexOption(reasoningEffort),
+		"-e", "CODEX_MODEL=" + options.Model,
+		"-e", "CODEX_REASONING_EFFORT=" + sanitizeCodexOption(options.ReasoningEffort),
 		"-e", "CODEX_OUTPUT_FILE=/home/codex/.codex/" + filepath.Base(outputPath),
+		"-e", "CODEX_OUTPUT_SCHEMA_FILE=/home/codex/.codex/" + filepath.Base(schemaPath),
 		"-e", "HOME=/home/codex",
 		"-e", "CODEX_HOME=/home/codex/.codex",
 		"-v", stateRoot + ":/home/codex/.codex",
-		image,
-		"sh", "-lc", command,
+		options.Image,
+		"sh", "-lc", options.Command,
 	}
 	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Stdin = strings.NewReader(prompt)
-	text, err := runCommandWithOptionalEvents(cmd, emit)
+	cmd.Stdin = strings.NewReader(options.Prompt)
+	text, err := runCommandWithOptionalEvents(cmd, options.Emit)
 	if fileOutput := readOptionalOutputFile(outputPath); fileOutput != "" {
 		if err != nil {
 			return fileOutput, fmt.Errorf("%w (%s)", err, compactProcessOutput(text))
