@@ -142,6 +142,7 @@ type StudyPipelineTaskViewResponse struct {
 	GeneratedAt    string                    `json:"generatedAt"`
 	Source         string                    `json:"source"`
 	ScriptMarkdown string                    `json:"scriptMarkdown"`
+	ScriptSections []StudyPipelineContentRef `json:"scriptSections,omitempty"`
 	Sheets         []StudyPipelineTaskSheet  `json:"sheets"`
 	Resources      []StudyPipelineViewSource `json:"resources"`
 	Progress       StudyPipelineProgress     `json:"progress"`
@@ -162,9 +163,32 @@ type StudyPipelineTaskItem struct {
 	SourceResourceID string                  `json:"sourceResourceId"`
 	Title            string                  `json:"title"`
 	PromptMarkdown   string                  `json:"promptMarkdown"`
+	ContentState     StudyPipelineContentRef `json:"contentState"`
 	Parts            []StudyPipelineTaskPart `json:"parts"`
 	LatestAttempt    *StudyPipelineAttempt   `json:"latestAttempt,omitempty"`
 	Status           string                  `json:"status"`
+}
+
+type StudyPipelineContentRef struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Title       string `json:"title"`
+	Status      string `json:"status"`
+	StatusLabel string `json:"statusLabel"`
+	Model       string `json:"model,omitempty"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
+	SourcePath  string `json:"sourcePath,omitempty"`
+}
+
+type StudyPipelineRefineRequest struct {
+	Kind     string `json:"kind"`
+	TargetID string `json:"targetId"`
+}
+
+type StudyPipelineRefineResponse struct {
+	CourseID       string                  `json:"courseId"`
+	Target         StudyPipelineContentRef `json:"target"`
+	ContentPreview string                  `json:"contentPreview,omitempty"`
 }
 
 type StudyPipelineTaskPart struct {

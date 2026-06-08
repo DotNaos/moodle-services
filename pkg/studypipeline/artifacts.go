@@ -1,6 +1,7 @@
 package studypipeline
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -18,9 +19,12 @@ import (
 )
 
 const (
-	EnvArtifactRoot     = "MOODLE_STUDY_ARTIFACT_ROOT"
-	EnvCodexCommand     = "MOODLE_STUDY_CODEX_COMMAND"
-	DefaultArtifactRoot = "/srv/moodle-study"
+	EnvArtifactRoot          = "MOODLE_STUDY_ARTIFACT_ROOT"
+	EnvCodexCommand          = "MOODLE_STUDY_CODEX_COMMAND"
+	EnvCodexDockerImage      = "MOODLE_STUDY_CODEX_DOCKER_IMAGE"
+	EnvCodexModelCandidates  = "MOODLE_STUDY_CODEX_MODEL_CANDIDATES"
+	EnvCodexContainerCommand = "MOODLE_STUDY_CODEX_CONTAINER_COMMAND"
+	DefaultArtifactRoot      = "/srv/moodle-study"
 )
 
 type Downloader interface {
@@ -31,6 +35,8 @@ type RunOptions struct {
 	Root       string
 	Now        time.Time
 	Downloader Downloader
+	UserID     string
+	Refiner    ContentRefiner
 }
 
 type TaskMessage struct {
@@ -38,6 +44,25 @@ type TaskMessage struct {
 	Role      string `json:"role"`
 	Text      string `json:"text"`
 	CreatedAt string `json:"createdAt"`
+}
+
+type ContentRefiner interface {
+	Refine(ctx context.Context, input RefineInput) (RefineOutput, error)
+}
+
+type RefineInput struct {
+	ArtifactRoot string
+	CourseID     string
+	UserID       string
+	Kind         string
+	TargetID     string
+	Title        string
+	Content      string
+}
+
+type RefineOutput struct {
+	Content string
+	Model   string
 }
 
 var unsafePathRe = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
@@ -173,6 +198,7 @@ func LoadTaskView(courseID string, resources []moodle.Resource, includeScript bo
 				SourceResourceID: link.Task.ID,
 				Title:            link.Task.Name,
 				PromptMarkdown:   taskPrompt(root, courseID, link),
+				ContentState:     taskContentState(root, courseID, link),
 				Parts: []contract.StudyPipelineTaskPart{{
 					ID:             taskID + "-main",
 					Label:          "Aufgabe",
@@ -200,6 +226,7 @@ func LoadTaskView(courseID string, resources []moodle.Resource, includeScript bo
 		GeneratedAt:    now.UTC().Format(time.RFC3339),
 		Source:         "moodle-services",
 		ScriptMarkdown: script,
+		ScriptSections: scriptContentStates(root, courseID, plan),
 		Sheets:         sheets,
 		Resources:      viewResources(plan.Materials),
 		Progress:       progress,
@@ -215,6 +242,63 @@ func LoadScript(courseID string, resources []moodle.Resource, options RunOptions
 		return "", err
 	}
 	return loadScriptMarkdown(root, courseID, resources), nil
+}
+
+func RefineContent(ctx context.Context, courseID string, resources []moodle.Resource, input contract.StudyPipelineRefineRequest, options RunOptions) (contract.StudyPipelineRefineResponse, error) {
+	now := options.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	root := strings.TrimSpace(options.Root)
+	if root == "" {
+		root = ArtifactRootFromEnv()
+	}
+	if err := writeCurated(root, courseID, resources, now); err != nil {
+		return contract.StudyPipelineRefineResponse{}, err
+	}
+
+	plan := Build(courseID, resources, "refine", now)
+	kind := normalizeRefineKind(input.Kind)
+	targetID := strings.TrimSpace(input.TargetID)
+	if targetID == "" {
+		return contract.StudyPipelineRefineResponse{}, fmt.Errorf("targetId is required")
+	}
+	material, ok := findRefineMaterial(plan, kind, targetID)
+	if !ok {
+		return contract.StudyPipelineRefineResponse{}, fmt.Errorf("refine target %q was not found for %s", targetID, kind)
+	}
+	content := extractedContentForMaterial(root, courseID, material)
+	if strings.TrimSpace(content) == "" {
+		return contract.StudyPipelineRefineResponse{}, fmt.Errorf("no extracted content is available for %s", material.Name)
+	}
+	refiner := options.Refiner
+	if refiner == nil {
+		refiner = DockerCodexRefiner{}
+	}
+	output, err := refiner.Refine(ctx, RefineInput{
+		ArtifactRoot: root,
+		CourseID:     courseID,
+		UserID:       options.UserID,
+		Kind:         kind,
+		TargetID:     targetID,
+		Title:        material.Name,
+		Content:      content,
+	})
+	if err != nil {
+		return contract.StudyPipelineRefineResponse{}, err
+	}
+	if strings.TrimSpace(output.Content) == "" {
+		return contract.StudyPipelineRefineResponse{}, fmt.Errorf("codex returned empty refined content")
+	}
+	if err := writeImprovedContent(root, courseID, material, kind, output.Content, output.Model, now); err != nil {
+		return contract.StudyPipelineRefineResponse{}, err
+	}
+	state := contentState(root, courseID, material, kind)
+	return contract.StudyPipelineRefineResponse{
+		CourseID:       courseID,
+		Target:         state,
+		ContentPreview: previewMarkdown(output.Content, 1200),
+	}, nil
 }
 
 func RecordAttempt(root string, courseID string, taskIDValue string, attempt contract.StudyPipelineAttempt) error {
@@ -441,7 +525,7 @@ func buildScript(root string, courseID string, plan contract.StudyPipelineRespon
 		}
 		out.WriteString("## " + material.Name + "\n\n")
 		out.WriteString("Source: [Moodle resource](moodle-resource:" + material.ID + ")\n\n")
-		content := extractedContentForMaterial(root, courseID, material)
+		content := displayContentForMaterial(root, courseID, material, "script-section")
 		if content == "" {
 			out.WriteString("No extracted text was available for this Moodle resource.\n\n")
 			continue
@@ -478,11 +562,12 @@ func buildTasksIndex(courseID string, plan contract.StudyPipelineResponse, now t
 }
 
 func taskPrompt(root string, courseID string, link contract.StudyPipelineTaskLink) string {
-	content := extractedContentForMaterial(root, courseID, link.Task)
+	content := displayContentForMaterial(root, courseID, link.Task, "task")
+	state := contentState(root, courseID, link.Task, "task")
 	lines := []string{
 		"---",
-		"status: task-from-extracted",
-		"ai_used: false",
+		"status: " + state.Status,
+		"ai_used: " + fmt.Sprintf("%t", state.Status == "codex-improved"),
 		"course_id: \"" + courseID + "\"",
 		"source_task: \"" + link.Task.ID + "\"",
 		"---",
@@ -503,6 +588,10 @@ func taskPrompt(root string, courseID string, link contract.StudyPipelineTaskLin
 		lines = append(lines, "", "Solution status: missing in Moodle or not detected.")
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func taskContentState(root string, courseID string, link contract.StudyPipelineTaskLink) contract.StudyPipelineContentRef {
+	return contentState(root, courseID, link.Task, "task")
 }
 
 func effectiveTaskLinks(materials []contract.StudyPipelineMaterial, links []contract.StudyPipelineTaskLink) []contract.StudyPipelineTaskLink {
@@ -530,6 +619,128 @@ func solutionPrompt(root string, courseID string, resource contract.StudyPipelin
 	}, "\n") + "\n"
 }
 
+func scriptContentStates(root string, courseID string, plan contract.StudyPipelineResponse) []contract.StudyPipelineContentRef {
+	states := []contract.StudyPipelineContentRef{}
+	for _, material := range plan.Materials {
+		if material.Type != "slide" && material.Type != "script" {
+			continue
+		}
+		states = append(states, contentState(root, courseID, material, "script-section"))
+	}
+	return states
+}
+
+func displayContentForMaterial(root string, courseID string, material contract.StudyPipelineMaterial, kind string) string {
+	if content := improvedContentForMaterial(root, courseID, material, kind); strings.TrimSpace(content) != "" {
+		return content
+	}
+	return extractedContentForMaterial(root, courseID, material)
+}
+
+func improvedContentForMaterial(root string, courseID string, material contract.StudyPipelineMaterial, kind string) string {
+	path := improvedPathForMaterial(root, courseID, material, kind)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return stripFrontmatter(strings.TrimSpace(string(data)))
+}
+
+func writeImprovedContent(root string, courseID string, material contract.StudyPipelineMaterial, kind string, content string, model string, now time.Time) error {
+	path := improvedPathForMaterial(root, courseID, material, kind)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	lines := []string{
+		"---",
+		"status: codex-improved",
+		"ai_used: true",
+		"course_id: \"" + courseID + "\"",
+		"kind: \"" + kind + "\"",
+		"target_id: \"" + material.ID + "\"",
+		"model: \"" + strings.ReplaceAll(model, "\"", "\\\"") + "\"",
+		"generated_at: \"" + now.UTC().Format(time.RFC3339) + "\"",
+		"---",
+		"",
+		strings.TrimSpace(content),
+		"",
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
+}
+
+func contentState(root string, courseID string, material contract.StudyPipelineMaterial, kind string) contract.StudyPipelineContentRef {
+	state := contract.StudyPipelineContentRef{
+		ID:          material.ID,
+		Kind:        kind,
+		Title:       material.Name,
+		Status:      "machine-extracted",
+		StatusLabel: "Machine extracted",
+		SourcePath:  filepath.ToSlash(extractedPathForMaterial(root, courseID, material)),
+	}
+	if metadata, ok := improvedMetadata(root, courseID, material, kind); ok {
+		state.Status = "codex-improved"
+		state.StatusLabel = "Codex improved"
+		state.Model = metadata.Model
+		state.UpdatedAt = metadata.GeneratedAt
+		state.SourcePath = filepath.ToSlash(improvedPathForMaterial(root, courseID, material, kind))
+	}
+	return state
+}
+
+type improvedFileMetadata struct {
+	Model       string
+	GeneratedAt string
+}
+
+func improvedMetadata(root string, courseID string, material contract.StudyPipelineMaterial, kind string) (improvedFileMetadata, bool) {
+	data, err := os.ReadFile(improvedPathForMaterial(root, courseID, material, kind))
+	if err != nil {
+		return improvedFileMetadata{}, false
+	}
+	frontmatter := frontmatterBlock(string(data))
+	if frontmatter == "" {
+		return improvedFileMetadata{}, true
+	}
+	return improvedFileMetadata{
+		Model:       frontmatterValue(frontmatter, "model"),
+		GeneratedAt: frontmatterValue(frontmatter, "generated_at"),
+	}, true
+}
+
+func improvedPathForMaterial(root string, courseID string, material contract.StudyPipelineMaterial, kind string) string {
+	dirName := "script"
+	if kind == "task" {
+		dirName = "tasks"
+	}
+	return filepath.Join(courseDir(root, courseID), "improved", dirName, safeSegment(material.ID+"-"+material.Name)+".mdx")
+}
+
+func normalizeRefineKind(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "task":
+		return "task"
+	default:
+		return "script-section"
+	}
+}
+
+func findRefineMaterial(plan contract.StudyPipelineResponse, kind string, targetID string) (contract.StudyPipelineMaterial, bool) {
+	if kind == "task" {
+		for _, link := range effectiveTaskLinks(plan.Materials, plan.TaskLinks) {
+			if link.Task.ID == targetID || taskID(link.Task) == targetID {
+				return link.Task, true
+			}
+		}
+		return contract.StudyPipelineMaterial{}, false
+	}
+	for _, material := range plan.Materials {
+		if (material.Type == "slide" || material.Type == "script") && material.ID == targetID {
+			return material, true
+		}
+	}
+	return contract.StudyPipelineMaterial{}, false
+}
+
 func extractedContentForMaterial(root string, courseID string, material contract.StudyPipelineMaterial) string {
 	path := extractedPathForMaterial(root, courseID, material)
 	data, err := os.ReadFile(path)
@@ -547,6 +758,120 @@ func extractedPathForMaterial(root string, courseID string, material contract.St
 	return filepath.Join(courseDir(root, courseID), "extracted", dirName, safeSegment(material.ID+"-"+material.Name)+".mdx")
 }
 
+type DockerCodexRefiner struct{}
+
+func (DockerCodexRefiner) Refine(ctx context.Context, input RefineInput) (RefineOutput, error) {
+	image := strings.TrimSpace(os.Getenv(EnvCodexDockerImage))
+	if image == "" {
+		return RefineOutput{}, fmt.Errorf("%s is not configured", EnvCodexDockerImage)
+	}
+	models := codexModelCandidates()
+	if len(models) == 0 {
+		return RefineOutput{}, fmt.Errorf("%s is not configured", EnvCodexModelCandidates)
+	}
+	command := strings.TrimSpace(os.Getenv(EnvCodexContainerCommand))
+	if command == "" {
+		command = `codex exec --skip-git-repo-check --sandbox read-only --model "$CODEX_MODEL" -`
+	}
+	prompt := buildRefinePrompt(input)
+	var errs []string
+	for _, model := range models {
+		output, err := runDockerCodex(ctx, image, command, model, input.ArtifactRoot, input.UserID, prompt)
+		if err == nil && strings.TrimSpace(output) != "" {
+			return RefineOutput{Content: strings.TrimSpace(output), Model: model}, nil
+		}
+		if err != nil {
+			errs = append(errs, model+": "+err.Error())
+		} else {
+			errs = append(errs, model+": empty response")
+		}
+	}
+	return RefineOutput{}, fmt.Errorf("codex refinement failed for all configured models: %s", strings.Join(errs, "; "))
+}
+
+func codexModelCandidates() []string {
+	raw := strings.TrimSpace(os.Getenv(EnvCodexModelCandidates))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == '\n' || r == ';' })
+	models := []string{}
+	for _, part := range parts {
+		if model := strings.TrimSpace(part); model != "" {
+			models = append(models, model)
+		}
+	}
+	return models
+}
+
+func runDockerCodex(ctx context.Context, image string, command string, model string, artifactRoot string, userID string, prompt string) (string, error) {
+	userSegment := safeSegment(firstNonEmpty(userID, "anonymous"))
+	stateRoot := filepath.Join(firstNonEmpty(artifactRoot, ArtifactRootFromEnv()), "codex-users", userSegment)
+	if err := os.MkdirAll(stateRoot, 0o700); err != nil {
+		return "", err
+	}
+	args := []string{
+		"run", "--rm", "-i",
+		"-e", "CODEX_MODEL=" + model,
+		"-e", "CODEX_HOME=/home/codex/.codex",
+		"-v", stateRoot + ":/home/codex/.codex",
+		image,
+		"sh", "-lc", command,
+	}
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Stdin = strings.NewReader(prompt)
+	output, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(string(output))
+	if err != nil {
+		return "", fmt.Errorf("%w (%s)", err, compactProcessOutput(text))
+	}
+	return text, nil
+}
+
+func buildRefinePrompt(input RefineInput) string {
+	kindLabel := "script chapter"
+	if input.Kind == "task" {
+		kindLabel = "task sheet"
+	}
+	return strings.Join([]string{
+		"You are cleaning Moodle course material for a study UI.",
+		"Rewrite the given " + kindLabel + " into polished, useful Markdown.",
+		"Preserve all factual content, equations, variables, code snippets, task requirements, deadlines, and source intent.",
+		"Improve structure, headings, lists, LaTeX math formatting, and readability.",
+		"Use KaTeX-compatible LaTeX with inline `$...$` and display `$$...$$` where appropriate.",
+		"Do not invent new facts. If text is clearly garbled, keep the best faithful reconstruction.",
+		"Return only the improved Markdown content, without meta commentary.",
+		"",
+		"Course ID: " + input.CourseID,
+		"Title: " + input.Title,
+		"Target ID: " + input.TargetID,
+		"",
+		"Extracted source:",
+		input.Content,
+	}, "\n")
+}
+
+func compactProcessOutput(output string) string {
+	output = strings.Join(strings.Fields(output), " ")
+	const limit = 800
+	if len([]rune(output)) <= limit {
+		return output
+	}
+	return string([]rune(output)[:limit]) + "..."
+}
+
+func previewMarkdown(markdown string, limit int) string {
+	markdown = strings.TrimSpace(markdown)
+	if limit <= 0 {
+		return markdown
+	}
+	runes := []rune(markdown)
+	if len(runes) <= limit {
+		return markdown
+	}
+	return strings.TrimSpace(string(runes[:limit])) + "..."
+}
+
 func stripFrontmatter(markdown string) string {
 	if !strings.HasPrefix(markdown, "---") {
 		return strings.TrimSpace(markdown)
@@ -557,6 +882,31 @@ func stripFrontmatter(markdown string) string {
 		return strings.TrimSpace(markdown)
 	}
 	return strings.TrimSpace(rest[end+len("\n---"):])
+}
+
+func frontmatterBlock(markdown string) string {
+	if !strings.HasPrefix(markdown, "---") {
+		return ""
+	}
+	rest := strings.TrimPrefix(markdown, "---")
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:end])
+}
+
+func frontmatterValue(frontmatter string, key string) string {
+	prefix := key + ":"
+	for _, line := range strings.Split(frontmatter, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		return strings.Trim(value, `"`)
+	}
+	return ""
 }
 
 func firstNonEmpty(values ...string) string {

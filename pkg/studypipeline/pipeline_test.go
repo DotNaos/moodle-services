@@ -1,6 +1,7 @@
 package studypipeline
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DotNaos/moodle-services/internal/moodle"
+	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 )
 
 func TestBuildClassifiesAndLinksCourseMaterials(t *testing.T) {
@@ -129,6 +131,52 @@ func TestCuratedStageBuildsScriptFromExtractedContent(t *testing.T) {
 	if len(view.Sheets) != 1 || !strings.Contains(view.Sheets[0].Tasks[0].PromptMarkdown, "Berechnen Sie die Anzahl Parameter") {
 		t.Fatalf("expected task prompt to include extracted task text, got %#v", view.Sheets)
 	}
+	if len(view.ScriptSections) != 1 || view.ScriptSections[0].Status != "machine-extracted" {
+		t.Fatalf("expected script section status to be machine-extracted, got %#v", view.ScriptSections)
+	}
+	if view.Sheets[0].Tasks[0].ContentState.Status != "machine-extracted" {
+		t.Fatalf("expected task status to be machine-extracted, got %#v", view.Sheets[0].Tasks[0].ContentState)
+	}
+}
+
+func TestRefineContentWritesSeparateImprovedArtifact(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22585"
+	resources := []moodle.Resource{
+		{ID: "1", Name: "Neural Networks", FileType: "pdf", SectionName: "Week 1"},
+	}
+	writeExtractedFixture(t, root, courseID, "slides", "1-Neural Networks", "ugly extracted tensor text")
+
+	response, err := RefineContent(context.Background(), courseID, resources, contractRefineRequest("script-section", "1"), RunOptions{
+		Root:    root,
+		Now:     time.Unix(0, 0),
+		UserID:  "user-1",
+		Refiner: fakeRefiner{content: "## Neural Networks\n\nCleaned text with $x$ and structure.", model: "test-model"},
+	})
+	if err != nil {
+		t.Fatalf("RefineContent: %v", err)
+	}
+	if response.Target.Status != "codex-improved" || response.Target.Model != "test-model" {
+		t.Fatalf("unexpected target state: %#v", response.Target)
+	}
+
+	extracted := extractedContentForMaterial(root, courseID, Build(courseID, resources, "", time.Unix(0, 0)).Materials[0])
+	if extracted != "ugly extracted tensor text" {
+		t.Fatalf("extracted content was modified: %q", extracted)
+	}
+	view, err := LoadTaskView(courseID, resources, true, RunOptions{Root: root, Now: time.Unix(0, 0)})
+	if err != nil {
+		t.Fatalf("LoadTaskView: %v", err)
+	}
+	if !strings.Contains(view.ScriptMarkdown, "Cleaned text with $x$") {
+		t.Fatalf("expected improved content in script, got %q", view.ScriptMarkdown)
+	}
+	if strings.Contains(view.ScriptMarkdown, "ugly extracted tensor text") {
+		t.Fatalf("expected improved content to replace display text only, got %q", view.ScriptMarkdown)
+	}
+	if len(view.ScriptSections) != 1 || view.ScriptSections[0].Status != "codex-improved" {
+		t.Fatalf("expected improved section status, got %#v", view.ScriptSections)
+	}
 }
 
 func TestCuratedStageRemovesStaleGeneratedTaskFiles(t *testing.T) {
@@ -193,4 +241,17 @@ func writeExtractedFixture(t *testing.T, root string, courseID string, dirName s
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
+}
+
+type fakeRefiner struct {
+	content string
+	model   string
+}
+
+func (f fakeRefiner) Refine(context.Context, RefineInput) (RefineOutput, error) {
+	return RefineOutput{Content: f.content, Model: f.model}, nil
+}
+
+func contractRefineRequest(kind string, targetID string) contract.StudyPipelineRefineRequest {
+	return contract.StudyPipelineRefineRequest{Kind: kind, TargetID: targetID}
 }

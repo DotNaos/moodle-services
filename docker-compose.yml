@@ -9,6 +9,9 @@ services:
             - MOODLE_DOCKER_CONTAINER_DATA_DIR=/data
             - MOODLE_DOCKER_HOST_DATA_DIR=${HOME}/.moodle
             - MOODLE_OCR_CACHE_DIR=/data/ocr/cache
+            - MOODLE_STUDY_ARTIFACT_ROOT=/data/study
+            - MOODLE_STUDY_CODEX_DOCKER_IMAGE=moodle-study-codex-runner:local
+            - MOODLE_STUDY_CODEX_MODEL_CANDIDATES=${MOODLE_STUDY_CODEX_MODEL_CANDIDATES:-gpt5.3 Codex Spark,gpt5.5}
             - MOODLE_USERNAME=${MOODLE_USERNAME}
             - MOODLE_PASSWORD=${MOODLE_PASSWORD}
         ports:
