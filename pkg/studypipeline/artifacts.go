@@ -857,6 +857,9 @@ func buildRefinePrompt(input RefineInput) string {
 
 func compactProcessOutput(output string) string {
 	output = strings.Join(strings.Fields(output), " ")
+	if index := strings.LastIndex(output, "ERROR:"); index >= 0 {
+		output = output[index:]
+	}
 	const limit = 800
 	if len([]rune(output)) <= limit {
 		return output
