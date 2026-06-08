@@ -1062,7 +1062,7 @@ func emitCodexLineEvent(line string, emit func(contract.StudyPipelineRefineEvent
 	if strings.Contains(line, "ERROR") || strings.Contains(line, "Reconnecting") {
 		emit(contract.StudyPipelineRefineEvent{
 			Type:    "codex",
-			Message: compactProcessOutput(line),
+			Message: humanCodexProcessMessage(line),
 		})
 	}
 }
@@ -1076,11 +1076,11 @@ func codexEventMessage(event map[string]any) string {
 		return "Codex is reading the extracted content."
 	case "turn.failed":
 		if details, ok := event["error"].(map[string]any); ok {
-			return compactProcessOutput(stringValue(details["message"]))
+			return humanCodexProcessMessage(stringValue(details["message"]))
 		}
 		return "Codex refinement failed."
 	case "error":
-		return compactProcessOutput(stringValue(event["message"]))
+		return humanCodexProcessMessage(stringValue(event["message"]))
 	case "item.started":
 		return "Codex started a work item."
 	case "item.completed":
@@ -1091,6 +1091,14 @@ func codexEventMessage(event map[string]any) string {
 		}
 		return "Codex is working."
 	}
+}
+
+func humanCodexProcessMessage(value string) string {
+	text := compactProcessOutput(value)
+	if strings.Contains(text, "401 Unauthorized") || strings.Contains(text, "Missing bearer") || strings.Contains(text, "Not logged in") {
+		return "Codex is not connected for this user. Connect ChatGPT before improving content."
+	}
+	return text
 }
 
 func buildRefinePrompt(input RefineInput) string {
