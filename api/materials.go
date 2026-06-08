@@ -112,6 +112,23 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			return
 		}
 		svc.WriteJSON(w, http.StatusOK, view)
+	case "refine":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		var input contract.StudyPipelineRefineRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		options.UserID = studyUserID
+		response, err := studypipeline.RefineContent(r.Context(), courseID, materials, input, options)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, response)
 	case "chat":
 		taskID := strings.TrimSpace(r.URL.Query().Get("taskId"))
 		if taskID == "" {

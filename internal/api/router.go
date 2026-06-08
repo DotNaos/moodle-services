@@ -76,6 +76,7 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses/{courseID}/study-pipeline/status", studyPipelineStatusRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/script", studyPipelineScriptRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/task-view", studyPipelineTaskViewRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/refine", studyPipelineRefineRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/attempts", studyPipelineAttemptRoute(opts))
@@ -213,6 +214,23 @@ func studyPipelineScriptRoute(opts ServerOptions) http.HandlerFunc {
 
 func studyPipelineTaskViewRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineReadRoute(opts, "task-view")
+}
+
+func studyPipelineRefineRoute(opts ServerOptions) http.HandlerFunc {
+	localHandler := studyPipelineRefineHandler(opts)
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": "refine",
+	}, map[string]string{
+		"courseID": "courseId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		localHandler(w, r)
+	}
 }
 
 func studyPipelineChatRoute(opts ServerOptions) http.HandlerFunc {
@@ -401,6 +419,30 @@ func studyPipelineTaskStateHandler(opts ServerOptions, action string) http.Handl
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
+	}
+}
+
+func studyPipelineRefineHandler(opts ServerOptions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		courseID, resources, downloader, ok := studyPipelineContext(w, r, opts)
+		if !ok {
+			return
+		}
+		var input contract.StudyPipelineRefineRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		response, err := studypipeline.RefineContent(r.Context(), courseID, resources, input, studypipeline.RunOptions{
+			Downloader: downloader,
+			Now:        time.Now(),
+			UserID:     strings.TrimSpace(r.Header.Get("X-Clerk-User-Id")),
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
 	}
 }
 
