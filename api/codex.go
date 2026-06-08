@@ -15,9 +15,19 @@ func Codex(w http.ResponseWriter, r *http.Request) {
 	action := r.URL.Query().Get("action")
 	switch action {
 	case "status":
+		clerkUserID, ok := authorizeInternalRequest(w, r, true)
+		if !ok {
+			return
+		}
+		authenticated, detail, err := studypipeline.CodexAuthenticated(r.Context(), clerkUserID, "")
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
 		svc.WriteJSON(w, http.StatusOK, map[string]any{
-			"authenticated": false,
+			"authenticated": authenticated,
 			"provider":      "moodle-services",
+			"detail":        detail,
 		})
 	case "auth", "auth-callback":
 		svc.WriteJSON(w, http.StatusNotImplemented, map[string]string{
@@ -26,6 +36,17 @@ func Codex(w http.ResponseWriter, r *http.Request) {
 	case "models":
 		clerkUserID, ok := authorizeInternalRequest(w, r, true)
 		if !ok {
+			return
+		}
+		authenticated, _, err := studypipeline.CodexAuthenticated(r.Context(), clerkUserID, "")
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		if !authenticated {
+			svc.WriteJSON(w, http.StatusUnauthorized, map[string]string{
+				"error": "Connect ChatGPT before loading the Codex model catalog.",
+			})
 			return
 		}
 		models, err := studypipeline.CodexModelCatalog(r.Context(), clerkUserID, "")

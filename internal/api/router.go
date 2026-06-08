@@ -437,6 +437,10 @@ func studyPipelineRefineHandler(opts ServerOptions) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("model is required; load /api/codex/models and pass one of the returned model ids"))
 			return
 		}
+		if acceptsNDJSON(r) {
+			streamStudyPipelineRefine(w, r, courseID, resources, downloader, input)
+			return
+		}
 		response, err := studypipeline.RefineContent(r.Context(), courseID, resources, input, studypipeline.RunOptions{
 			Downloader: downloader,
 			Now:        time.Now(),
@@ -448,6 +452,50 @@ func studyPipelineRefineHandler(opts ServerOptions) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, response)
 	}
+}
+
+func streamStudyPipelineRefine(w http.ResponseWriter, r *http.Request, courseID string, resources []moodle.Resource, downloader studypipeline.Downloader, input contract.StudyPipelineRefineRequest) {
+	w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	encoder := json.NewEncoder(w)
+	emit := func(event contract.StudyPipelineRefineEvent) {
+		_ = encoder.Encode(event)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	emit(contract.StudyPipelineRefineEvent{
+		Type:            "queued",
+		Message:         "Queued Codex refinement on the server.",
+		Model:           strings.TrimSpace(input.Model),
+		ReasoningEffort: strings.TrimSpace(input.ReasoningEffort),
+	})
+	response, err := studypipeline.RefineContent(r.Context(), courseID, resources, input, studypipeline.RunOptions{
+		Downloader:  downloader,
+		Now:         time.Now(),
+		UserID:      strings.TrimSpace(r.Header.Get("X-Clerk-User-Id")),
+		RefineEvent: emit,
+	})
+	if err != nil {
+		emit(contract.StudyPipelineRefineEvent{
+			Type:  "error",
+			Error: err.Error(),
+		})
+		return
+	}
+	target := response.Target
+	emit(contract.StudyPipelineRefineEvent{
+		Type:           "done",
+		Message:        "Codex refinement finished.",
+		Target:         &target,
+		ContentPreview: response.ContentPreview,
+	})
+}
+
+func acceptsNDJSON(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "application/x-ndjson")
 }
 
 func studyPipelineContext(w http.ResponseWriter, r *http.Request, opts ServerOptions) (string, []moodle.Resource, studypipeline.Downloader, bool) {
