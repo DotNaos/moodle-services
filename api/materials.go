@@ -122,6 +122,10 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		if strings.TrimSpace(input.Model) == "" {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "model is required; load /api/codex/models and pass one of the returned model ids"})
+			return
+		}
 		options.UserID = studyUserID
 		response, err := studypipeline.RefineContent(r.Context(), courseID, materials, input, options)
 		if err != nil {
