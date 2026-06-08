@@ -65,7 +65,7 @@ func classify(resource moodle.Resource) string {
 	switch {
 	case containsAny(text, "loesung", "solution", "solutions", "musterloesung", "musterloesungen"):
 		return "solution"
-	case containsAny(text, "aufgabe", "aufgaben", "uebung", "uebungen", "exercise", "exercises", "task", "tasks", "assignment", "homework"):
+	case isTaskLike(text):
 		return "task"
 	case containsAny(text, "script", "skript", "reader"):
 		return "script"
@@ -76,6 +76,24 @@ func classify(resource moodle.Resource) string {
 	default:
 		return "other"
 	}
+}
+
+func isTaskLike(text string) bool {
+	if containsAny(text,
+		"bewertungskriter", "assessment criteria", "beurteilungsraster", "bewertungsraster",
+		"semesterinformation", "semesterbeschreibung", "modulbeschreibung", "powerpoint vorlage",
+		"template", "vorlage", "guideline", "guidelines", "merkblatt",
+	) {
+		return false
+	}
+	return containsAny(text,
+		"aufgabe", "aufgaben", "auftrag", "arbeitsauftrag",
+		"uebung", "uebungen", "uebungsblatt", "klassenaufgabe",
+		"exercise", "exercises", "task", "tasks", "assignment", "homework", "worksheet", "activity", "activities",
+		"assessment 1", "assessment 2", "assessment 3", "assessment 4",
+		"probepruefung", "probeklausur", "probe klausur", "exam overview", "mid-term exam",
+		"fallbeispiel", "case study", "checkliste",
+	)
 }
 
 func linkTasks(materials []contract.StudyPipelineMaterial) ([]contract.StudyPipelineTaskLink, []contract.StudyPipelineMaterial) {
