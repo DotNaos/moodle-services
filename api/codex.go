@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	svc "github.com/DotNaos/moodle-services/pkg/moodleservices"
+	"github.com/DotNaos/moodle-services/pkg/studypipeline"
 )
 
 func Codex(w http.ResponseWriter, r *http.Request) {
@@ -23,9 +24,16 @@ func Codex(w http.ResponseWriter, r *http.Request) {
 			"error": "Codex authentication has moved to moodle-services, but the Codex runner is not configured on this deployment yet.",
 		})
 	case "models":
-		svc.WriteJSON(w, http.StatusOK, map[string]any{
-			"models": []map[string]string{},
-		})
+		clerkUserID, ok := authorizeInternalRequest(w, r, true)
+		if !ok {
+			return
+		}
+		models, err := studypipeline.CodexModelCatalog(r.Context(), clerkUserID, "")
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, models)
 	case "files":
 		if r.Method == http.MethodGet {
 			svc.WriteJSON(w, http.StatusOK, map[string]any{"files": []string{}})

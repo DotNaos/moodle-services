@@ -55,6 +55,7 @@ type RefineInput struct {
 	CourseID     string
 	UserID       string
 	Kind         string
+	Model        string
 	TargetID     string
 	Title        string
 	Content      string
@@ -280,6 +281,7 @@ func RefineContent(ctx context.Context, courseID string, resources []moodle.Reso
 		CourseID:     courseID,
 		UserID:       options.UserID,
 		Kind:         kind,
+		Model:        input.Model,
 		TargetID:     targetID,
 		Title:        material.Name,
 		Content:      content,
@@ -765,7 +767,7 @@ func (DockerCodexRefiner) Refine(ctx context.Context, input RefineInput) (Refine
 	if image == "" {
 		return RefineOutput{}, fmt.Errorf("%s is not configured", EnvCodexDockerImage)
 	}
-	models := codexModelCandidates()
+	models := codexModelCandidates(input.Model)
 	if len(models) == 0 {
 		return RefineOutput{}, fmt.Errorf("%s is not configured", EnvCodexModelCandidates)
 	}
@@ -789,7 +791,22 @@ func (DockerCodexRefiner) Refine(ctx context.Context, input RefineInput) (Refine
 	return RefineOutput{}, fmt.Errorf("codex refinement failed for all configured models: %s", strings.Join(errs, "; "))
 }
 
-func codexModelCandidates() []string {
+func CodexModelCatalog(ctx context.Context, userID string, root string) (contract.CodexModelCatalogResponse, error) {
+	image := strings.TrimSpace(os.Getenv(EnvCodexDockerImage))
+	if image == "" {
+		return contract.CodexModelCatalogResponse{}, fmt.Errorf("%s is not configured", EnvCodexDockerImage)
+	}
+	output, err := runDockerCodex(ctx, image, "codex debug models", "", firstNonEmpty(root, ArtifactRootFromEnv()), userID, "")
+	if err != nil {
+		return contract.CodexModelCatalogResponse{}, err
+	}
+	return contract.CodexModelCatalogResponse{Models: parseCodexModels(output)}, nil
+}
+
+func codexModelCandidates(selected string) []string {
+	if model := sanitizeCodexModel(selected); model != "" {
+		return []string{model}
+	}
 	raw := strings.TrimSpace(os.Getenv(EnvCodexModelCandidates))
 	if raw == "" {
 		return nil
@@ -802,6 +819,81 @@ func codexModelCandidates() []string {
 		}
 	}
 	return models
+}
+
+func sanitizeCodexModel(value string) string {
+	model := strings.TrimSpace(value)
+	if model == "" || len([]rune(model)) > 160 || strings.ContainsAny(model, "\r\n\t") {
+		return ""
+	}
+	return model
+}
+
+func parseCodexModels(value string) []contract.CodexModelOption {
+	var payload struct {
+		Models []map[string]any `json:"models"`
+	}
+	if err := json.Unmarshal([]byte(value), &payload); err != nil {
+		return nil
+	}
+	models := []contract.CodexModelOption{}
+	for _, item := range payload.Models {
+		id := stringValue(item["slug"])
+		label := firstNonEmpty(stringValue(item["display_name"]), id)
+		if id == "" || label == "" {
+			continue
+		}
+		models = append(models, contract.CodexModelOption{
+			ID:                     id,
+			Label:                  label,
+			Description:            stringValue(item["description"]),
+			DefaultReasoningEffort: stringValue(item["default_reasoning_level"]),
+			ReasoningEfforts:       parseReasoningEfforts(item["supported_reasoning_levels"]),
+		})
+	}
+	return models
+}
+
+func parseReasoningEfforts(value any) []contract.CodexReasoningOption {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	efforts := []contract.CodexReasoningOption{}
+	for _, item := range items {
+		record, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		id := stringValue(record["effort"])
+		if id == "" {
+			continue
+		}
+		efforts = append(efforts, contract.CodexReasoningOption{
+			ID:          id,
+			Label:       reasoningEffortLabel(id),
+			Description: stringValue(record["description"]),
+		})
+	}
+	return efforts
+}
+
+func reasoningEffortLabel(value string) string {
+	if value == "xhigh" {
+		return "XHigh"
+	}
+	if value == "" {
+		return ""
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
+}
+
+func stringValue(value any) string {
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
 }
 
 func runDockerCodex(ctx context.Context, image string, command string, model string, artifactRoot string, userID string, prompt string) (string, error) {

@@ -183,12 +183,31 @@ type StudyPipelineContentRef struct {
 type StudyPipelineRefineRequest struct {
 	Kind     string `json:"kind"`
 	TargetID string `json:"targetId"`
+	Model    string `json:"model,omitempty"`
 }
 
 type StudyPipelineRefineResponse struct {
 	CourseID       string                  `json:"courseId"`
 	Target         StudyPipelineContentRef `json:"target"`
 	ContentPreview string                  `json:"contentPreview,omitempty"`
+}
+
+type CodexModelCatalogResponse struct {
+	Models []CodexModelOption `json:"models"`
+}
+
+type CodexModelOption struct {
+	ID                     string                 `json:"id"`
+	Label                  string                 `json:"label"`
+	Description            string                 `json:"description,omitempty"`
+	DefaultReasoningEffort string                 `json:"defaultReasoningEffort,omitempty"`
+	ReasoningEfforts       []CodexReasoningOption `json:"reasoningEfforts,omitempty"`
+}
+
+type CodexReasoningOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
 }
 
 type StudyPipelineTaskPart struct {
