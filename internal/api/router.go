@@ -433,6 +433,10 @@ func studyPipelineRefineHandler(opts ServerOptions) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		if strings.TrimSpace(input.Model) == "" {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("model is required; load /api/codex/models and pass one of the returned model ids"))
+			return
+		}
 		response, err := studypipeline.RefineContent(r.Context(), courseID, resources, input, studypipeline.RunOptions{
 			Downloader: downloader,
 			Now:        time.Now(),
