@@ -814,6 +814,7 @@ func runDockerCodex(ctx context.Context, image string, command string, model str
 	_ = os.Chmod(stateRoot, 0o700)
 	args := []string{
 		"run", "--rm", "-i",
+		"--user", "0:0",
 		"-e", "CODEX_MODEL=" + model,
 		"-e", "HOME=/home/codex",
 		"-e", "CODEX_HOME=/home/codex/.codex",
