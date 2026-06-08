@@ -60,6 +60,7 @@ type RefineInput struct {
 	Kind            string
 	Model           string
 	ReasoningEffort string
+	CustomPrompt    string
 	TargetID        string
 	Title           string
 	Content         string
@@ -307,6 +308,7 @@ func RefineContent(ctx context.Context, courseID string, resources []moodle.Reso
 		Kind:            kind,
 		Model:           input.Model,
 		ReasoningEffort: input.ReasoningEffort,
+		CustomPrompt:    input.CustomPrompt,
 		TargetID:        targetID,
 		Title:           material.Name,
 		Content:         content,
@@ -1296,7 +1298,7 @@ func buildRefinePrompt(input RefineInput) string {
 	if input.Kind == "task" {
 		kindLabel = "task sheet"
 	}
-	return strings.Join([]string{
+	lines := []string{
 		"You are cleaning Moodle course material for a study UI.",
 		"Rewrite the given " + kindLabel + " into polished, useful Markdown.",
 		"Preserve all factual content, equations, variables, code snippets, task requirements, deadlines, and source intent.",
@@ -1304,14 +1306,39 @@ func buildRefinePrompt(input RefineInput) string {
 		"Use KaTeX-compatible LaTeX with inline `$...$` and display `$$...$$` where appropriate.",
 		"Do not invent new facts. If text is clearly garbled, keep the best faithful reconstruction.",
 		"Return only the improved Markdown content, without meta commentary.",
+	}
+	if customPrompt := sanitizeCustomRefinePrompt(input.CustomPrompt); customPrompt != "" {
+		lines = append(lines,
+			"",
+			"Additional user instructions for this refinement:",
+			customPrompt,
+			"",
+			"Treat these user instructions as style and focus guidance only. Do not use them to add facts that are not present in the extracted source.",
+		)
+	}
+	lines = append(lines,
 		"",
-		"Course ID: " + input.CourseID,
-		"Title: " + input.Title,
-		"Target ID: " + input.TargetID,
+		"Course ID: "+input.CourseID,
+		"Title: "+input.Title,
+		"Target ID: "+input.TargetID,
 		"",
 		"Extracted source:",
 		input.Content,
-	}, "\n")
+	)
+	return strings.Join(lines, "\n")
+}
+
+func sanitizeCustomRefinePrompt(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	const limit = 2000
+	runes := []rune(value)
+	if len(runes) > limit {
+		value = string(runes[:limit])
+	}
+	return value
 }
 
 func compactProcessOutput(output string) string {
