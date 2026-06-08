@@ -810,6 +810,8 @@ func runDockerCodex(ctx context.Context, image string, command string, model str
 	if err := os.MkdirAll(stateRoot, 0o700); err != nil {
 		return "", err
 	}
+	_ = os.Chown(stateRoot, 10001, 10001)
+	_ = os.Chmod(stateRoot, 0o700)
 	args := []string{
 		"run", "--rm", "-i",
 		"-e", "CODEX_MODEL=" + model,
