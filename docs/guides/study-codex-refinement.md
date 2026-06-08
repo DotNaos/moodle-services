@@ -26,19 +26,18 @@ Set these environment variables for the `moodle-services` API:
 ```sh
 MOODLE_STUDY_ARTIFACT_ROOT=/srv/moodle-study
 MOODLE_STUDY_CODEX_DOCKER_IMAGE=moodle-study-codex-runner:local
-MOODLE_STUDY_CODEX_MODEL_CANDIDATES='gpt5.3 Codex Spark,gpt5.5'
 ```
 
 The API container needs access to `/var/run/docker.sock`. The default
 `docker-compose.yml` mounts it.
 
-`MOODLE_STUDY_CODEX_MODEL_CANDIDATES` is ordered. The API tries the first model
-and falls back to the next one if Codex cannot return content. Keep model names
-in environment configuration rather than in source code.
+The Web UI loads model choices from `GET /api/codex/models`, which proxies the
+current per-user Codex model catalog from the Docker runner. Refinement requests
+must include one selected model id from that catalog. The API does not keep a
+hard-coded model fallback list.
 
 Optional override:
 
 ```sh
 MOODLE_STUDY_CODEX_CONTAINER_COMMAND='codex exec --skip-git-repo-check --sandbox read-only --model "$CODEX_MODEL" -'
 ```
-

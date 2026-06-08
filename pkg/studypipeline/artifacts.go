@@ -22,7 +22,6 @@ const (
 	EnvArtifactRoot          = "MOODLE_STUDY_ARTIFACT_ROOT"
 	EnvCodexCommand          = "MOODLE_STUDY_CODEX_COMMAND"
 	EnvCodexDockerImage      = "MOODLE_STUDY_CODEX_DOCKER_IMAGE"
-	EnvCodexModelCandidates  = "MOODLE_STUDY_CODEX_MODEL_CANDIDATES"
 	EnvCodexContainerCommand = "MOODLE_STUDY_CODEX_CONTAINER_COMMAND"
 	DefaultArtifactRoot      = "/srv/moodle-study"
 )
@@ -767,28 +766,23 @@ func (DockerCodexRefiner) Refine(ctx context.Context, input RefineInput) (Refine
 	if image == "" {
 		return RefineOutput{}, fmt.Errorf("%s is not configured", EnvCodexDockerImage)
 	}
-	models := codexModelCandidates(input.Model)
-	if len(models) == 0 {
-		return RefineOutput{}, fmt.Errorf("%s is not configured", EnvCodexModelCandidates)
+	model := sanitizeCodexModel(input.Model)
+	if model == "" {
+		return RefineOutput{}, fmt.Errorf("codex model is required; load /api/codex/models and pass one of the returned model ids")
 	}
 	command := strings.TrimSpace(os.Getenv(EnvCodexContainerCommand))
 	if command == "" {
 		command = `codex exec --skip-git-repo-check --sandbox read-only --model "$CODEX_MODEL" -`
 	}
 	prompt := buildRefinePrompt(input)
-	var errs []string
-	for _, model := range models {
-		output, err := runDockerCodex(ctx, image, command, model, input.ArtifactRoot, input.UserID, prompt)
-		if err == nil && strings.TrimSpace(output) != "" {
-			return RefineOutput{Content: strings.TrimSpace(output), Model: model}, nil
-		}
-		if err != nil {
-			errs = append(errs, model+": "+err.Error())
-		} else {
-			errs = append(errs, model+": empty response")
-		}
+	output, err := runDockerCodex(ctx, image, command, model, input.ArtifactRoot, input.UserID, prompt)
+	if err != nil {
+		return RefineOutput{}, fmt.Errorf("codex refinement failed for model %s: %w", model, err)
 	}
-	return RefineOutput{}, fmt.Errorf("codex refinement failed for all configured models: %s", strings.Join(errs, "; "))
+	if strings.TrimSpace(output) == "" {
+		return RefineOutput{}, fmt.Errorf("codex refinement failed for model %s: empty response", model)
+	}
+	return RefineOutput{Content: strings.TrimSpace(output), Model: model}, nil
 }
 
 func CodexModelCatalog(ctx context.Context, userID string, root string) (contract.CodexModelCatalogResponse, error) {
@@ -801,24 +795,6 @@ func CodexModelCatalog(ctx context.Context, userID string, root string) (contrac
 		return contract.CodexModelCatalogResponse{}, err
 	}
 	return contract.CodexModelCatalogResponse{Models: parseCodexModels(output)}, nil
-}
-
-func codexModelCandidates(selected string) []string {
-	if model := sanitizeCodexModel(selected); model != "" {
-		return []string{model}
-	}
-	raw := strings.TrimSpace(os.Getenv(EnvCodexModelCandidates))
-	if raw == "" {
-		return nil
-	}
-	parts := strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == '\n' || r == ';' })
-	models := []string{}
-	for _, part := range parts {
-		if model := strings.TrimSpace(part); model != "" {
-			models = append(models, model)
-		}
-	}
-	return models
 }
 
 func sanitizeCodexModel(value string) string {
