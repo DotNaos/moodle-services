@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DotNaos/moodle-services/internal/moodle"
@@ -71,6 +72,17 @@ type RefineOutput struct {
 }
 
 var unsafePathRe = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+var deviceAuthUserCodeRe = regexp.MustCompile(`[A-Z0-9]{4}-[A-Z0-9]{5}`)
+var codexAuthMu sync.Mutex
+var codexAuthProcesses = map[string]time.Time{}
+
+type CodexDeviceAuthStart struct {
+	Authenticated    bool
+	VerificationURI  string
+	UserCode         string
+	ExpiresInSeconds int
+}
 
 func ArtifactRootFromEnv() string {
 	if value := strings.TrimSpace(os.Getenv(EnvArtifactRoot)); value != "" {
@@ -847,6 +859,127 @@ func CodexAuthenticated(ctx context.Context, userID string, root string) (bool, 
 	return false, strings.TrimSpace(output), nil
 }
 
+func StartCodexDeviceAuth(ctx context.Context, userID string, root string) (CodexDeviceAuthStart, error) {
+	authenticated, _, err := CodexAuthenticated(ctx, userID, root)
+	if err != nil {
+		return CodexDeviceAuthStart{}, err
+	}
+	if authenticated {
+		return CodexDeviceAuthStart{Authenticated: true}, nil
+	}
+
+	image := strings.TrimSpace(os.Getenv(EnvCodexDockerImage))
+	if image == "" {
+		return CodexDeviceAuthStart{}, fmt.Errorf("%s is not configured", EnvCodexDockerImage)
+	}
+	stateRoot, err := prepareCodexStateRoot(firstNonEmpty(root, ArtifactRootFromEnv()), userID)
+	if err != nil {
+		return CodexDeviceAuthStart{}, err
+	}
+	authKey := safeSegment(firstNonEmpty(userID, "anonymous"))
+	if !claimCodexAuthProcess(authKey) {
+		return CodexDeviceAuthStart{}, fmt.Errorf("ChatGPT sign-in is already running for this user")
+	}
+
+	loginCtx, cancel := context.WithTimeout(context.Background(), 16*time.Minute)
+	args := []string{
+		"run", "--rm", "-i",
+		"--user", "0:0",
+		"-e", "HOME=/home/codex",
+		"-e", "CODEX_HOME=/home/codex/.codex",
+		"-v", stateRoot + ":/home/codex/.codex",
+		image,
+		"codex", "login", "--device-auth",
+	}
+	cmd := exec.CommandContext(loginCtx, "docker", args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		cancel()
+		releaseCodexAuthProcess(authKey)
+		return CodexDeviceAuthStart{}, err
+	}
+	cmd.Stderr = cmd.Stdout
+	if err := cmd.Start(); err != nil {
+		cancel()
+		releaseCodexAuthProcess(authKey)
+		return CodexDeviceAuthStart{}, err
+	}
+
+	resultCh := make(chan CodexDeviceAuthStart, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		defer releaseCodexAuthProcess(authKey)
+		defer cancel()
+		start, parseErr := readCodexDeviceAuthStart(stdout)
+		if parseErr != nil {
+			errCh <- parseErr
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return
+		}
+		resultCh <- start
+		_ = cmd.Wait()
+	}()
+
+	select {
+	case start := <-resultCh:
+		return start, nil
+	case err := <-errCh:
+		return CodexDeviceAuthStart{}, err
+	case <-time.After(8 * time.Second):
+		_ = cmd.Process.Kill()
+		return CodexDeviceAuthStart{}, fmt.Errorf("ChatGPT sign-in did not produce a device code")
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		return CodexDeviceAuthStart{}, ctx.Err()
+	}
+}
+
+func claimCodexAuthProcess(key string) bool {
+	codexAuthMu.Lock()
+	defer codexAuthMu.Unlock()
+	if startedAt, ok := codexAuthProcesses[key]; ok && time.Since(startedAt) < 16*time.Minute {
+		return false
+	}
+	codexAuthProcesses[key] = time.Now()
+	return true
+}
+
+func releaseCodexAuthProcess(key string) {
+	codexAuthMu.Lock()
+	defer codexAuthMu.Unlock()
+	delete(codexAuthProcesses, key)
+}
+
+func readCodexDeviceAuthStart(reader io.Reader) (CodexDeviceAuthStart, error) {
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var seen strings.Builder
+	var verificationURI string
+	var userCode string
+	for scanner.Scan() {
+		clean := strings.TrimSpace(ansiEscapeRe.ReplaceAllString(scanner.Text(), ""))
+		if clean == "" {
+			continue
+		}
+		seen.WriteString(clean)
+		seen.WriteByte('\n')
+		if strings.HasPrefix(clean, "http://") || strings.HasPrefix(clean, "https://") {
+			verificationURI = strings.Fields(clean)[0]
+		}
+		if code := deviceAuthUserCodeRe.FindString(clean); code != "" {
+			userCode = code
+		}
+		if verificationURI != "" && userCode != "" {
+			return CodexDeviceAuthStart{VerificationURI: verificationURI, UserCode: userCode, ExpiresInSeconds: 15 * 60}, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return CodexDeviceAuthStart{}, err
+	}
+	return CodexDeviceAuthStart{}, fmt.Errorf("could not read ChatGPT device code from Codex login output: %s", compactProcessOutput(seen.String()))
+}
+
 func sanitizeCodexModel(value string) string {
 	model := strings.TrimSpace(value)
 	if model == "" || len([]rune(model)) > 160 || strings.ContainsAny(model, "\r\n\t") {
@@ -947,13 +1080,10 @@ func stringSliceValue(value any) []string {
 }
 
 func runDockerCodex(ctx context.Context, image string, command string, model string, reasoningEffort string, artifactRoot string, userID string, prompt string, emit func(contract.StudyPipelineRefineEvent)) (string, error) {
-	userSegment := safeSegment(firstNonEmpty(userID, "anonymous"))
-	stateRoot := filepath.Join(firstNonEmpty(artifactRoot, ArtifactRootFromEnv()), "codex-users", userSegment)
-	if err := os.MkdirAll(stateRoot, 0o700); err != nil {
+	stateRoot, err := prepareCodexStateRoot(firstNonEmpty(artifactRoot, ArtifactRootFromEnv()), userID)
+	if err != nil {
 		return "", err
 	}
-	_ = os.Chown(stateRoot, 10001, 10001)
-	_ = os.Chmod(stateRoot, 0o700)
 	outputPath := filepath.Join(stateRoot, "last-refine-"+safeSegment(firstNonEmpty(model, "catalog"))+".md")
 	if prompt != "" {
 		_ = os.Remove(outputPath)
@@ -983,6 +1113,17 @@ func runDockerCodex(ctx context.Context, image string, command string, model str
 		return "", fmt.Errorf("%w (%s)", err, compactProcessOutput(text))
 	}
 	return text, nil
+}
+
+func prepareCodexStateRoot(artifactRoot string, userID string) (string, error) {
+	userSegment := safeSegment(firstNonEmpty(userID, "anonymous"))
+	stateRoot := filepath.Join(firstNonEmpty(artifactRoot, ArtifactRootFromEnv()), "codex-users", userSegment)
+	if err := os.MkdirAll(stateRoot, 0o700); err != nil {
+		return "", err
+	}
+	_ = os.Chown(stateRoot, 10001, 10001)
+	_ = os.Chmod(stateRoot, 0o700)
+	return stateRoot, nil
 }
 
 func runCommandWithOptionalEvents(cmd *exec.Cmd, emit func(contract.StudyPipelineRefineEvent)) (string, error) {
