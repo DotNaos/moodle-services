@@ -126,6 +126,13 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "model is required; load /api/codex/models and pass one of the returned model ids"})
 			return
 		}
+		if strings.Contains(r.Header.Get("Accept"), "application/x-ndjson") {
+			w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusNotImplemented)
+			_, _ = w.Write([]byte(`{"type":"error","error":"streaming refinement is available on the API server router"}` + "\n"))
+			return
+		}
 		options.UserID = studyUserID
 		response, err := studypipeline.RefineContent(r.Context(), courseID, materials, input, options)
 		if err != nil {

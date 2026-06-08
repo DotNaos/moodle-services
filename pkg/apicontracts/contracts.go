@@ -181,15 +181,26 @@ type StudyPipelineContentRef struct {
 }
 
 type StudyPipelineRefineRequest struct {
-	Kind     string `json:"kind"`
-	TargetID string `json:"targetId"`
-	Model    string `json:"model,omitempty"`
+	Kind            string `json:"kind"`
+	TargetID        string `json:"targetId"`
+	Model           string `json:"model,omitempty"`
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 }
 
 type StudyPipelineRefineResponse struct {
 	CourseID       string                  `json:"courseId"`
 	Target         StudyPipelineContentRef `json:"target"`
 	ContentPreview string                  `json:"contentPreview,omitempty"`
+}
+
+type StudyPipelineRefineEvent struct {
+	Type            string                   `json:"type"`
+	Message         string                   `json:"message,omitempty"`
+	Model           string                   `json:"model,omitempty"`
+	ReasoningEffort string                   `json:"reasoningEffort,omitempty"`
+	Target          *StudyPipelineContentRef `json:"target,omitempty"`
+	ContentPreview  string                   `json:"contentPreview,omitempty"`
+	Error           string                   `json:"error,omitempty"`
 }
 
 type CodexModelCatalogResponse struct {
@@ -202,6 +213,7 @@ type CodexModelOption struct {
 	Description            string                 `json:"description,omitempty"`
 	DefaultReasoningEffort string                 `json:"defaultReasoningEffort,omitempty"`
 	ReasoningEfforts       []CodexReasoningOption `json:"reasoningEfforts,omitempty"`
+	SpeedTiers             []string               `json:"speedTiers,omitempty"`
 }
 
 type CodexReasoningOption struct {

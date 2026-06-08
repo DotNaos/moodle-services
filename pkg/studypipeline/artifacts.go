@@ -1,11 +1,13 @@
 package studypipeline
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,11 +33,12 @@ type Downloader interface {
 }
 
 type RunOptions struct {
-	Root       string
-	Now        time.Time
-	Downloader Downloader
-	UserID     string
-	Refiner    ContentRefiner
+	Root        string
+	Now         time.Time
+	Downloader  Downloader
+	UserID      string
+	Refiner     ContentRefiner
+	RefineEvent func(contract.StudyPipelineRefineEvent)
 }
 
 type TaskMessage struct {
@@ -50,14 +53,16 @@ type ContentRefiner interface {
 }
 
 type RefineInput struct {
-	ArtifactRoot string
-	CourseID     string
-	UserID       string
-	Kind         string
-	Model        string
-	TargetID     string
-	Title        string
-	Content      string
+	ArtifactRoot    string
+	CourseID        string
+	UserID          string
+	Kind            string
+	Model           string
+	ReasoningEffort string
+	TargetID        string
+	Title           string
+	Content         string
+	Emit            func(contract.StudyPipelineRefineEvent)
 }
 
 type RefineOutput struct {
@@ -271,19 +276,29 @@ func RefineContent(ctx context.Context, courseID string, resources []moodle.Reso
 	if strings.TrimSpace(content) == "" {
 		return contract.StudyPipelineRefineResponse{}, fmt.Errorf("no extracted content is available for %s", material.Name)
 	}
+	if options.RefineEvent != nil {
+		options.RefineEvent(contract.StudyPipelineRefineEvent{
+			Type:            "started",
+			Message:         "Preparing extracted Moodle content for Codex.",
+			Model:           strings.TrimSpace(input.Model),
+			ReasoningEffort: strings.TrimSpace(input.ReasoningEffort),
+		})
+	}
 	refiner := options.Refiner
 	if refiner == nil {
 		refiner = DockerCodexRefiner{}
 	}
 	output, err := refiner.Refine(ctx, RefineInput{
-		ArtifactRoot: root,
-		CourseID:     courseID,
-		UserID:       options.UserID,
-		Kind:         kind,
-		Model:        input.Model,
-		TargetID:     targetID,
-		Title:        material.Name,
-		Content:      content,
+		ArtifactRoot:    root,
+		CourseID:        courseID,
+		UserID:          options.UserID,
+		Kind:            kind,
+		Model:           input.Model,
+		ReasoningEffort: input.ReasoningEffort,
+		TargetID:        targetID,
+		Title:           material.Name,
+		Content:         content,
+		Emit:            options.RefineEvent,
 	})
 	if err != nil {
 		return contract.StudyPipelineRefineResponse{}, err
@@ -295,6 +310,14 @@ func RefineContent(ctx context.Context, courseID string, resources []moodle.Reso
 		return contract.StudyPipelineRefineResponse{}, err
 	}
 	state := contentState(root, courseID, material, kind)
+	if options.RefineEvent != nil {
+		options.RefineEvent(contract.StudyPipelineRefineEvent{
+			Type:           "saved",
+			Message:        "Codex-improved content was saved separately from the extracted source.",
+			Target:         &state,
+			ContentPreview: previewMarkdown(output.Content, 1200),
+		})
+	}
 	return contract.StudyPipelineRefineResponse{
 		CourseID:       courseID,
 		Target:         state,
@@ -772,10 +795,22 @@ func (DockerCodexRefiner) Refine(ctx context.Context, input RefineInput) (Refine
 	}
 	command := strings.TrimSpace(os.Getenv(EnvCodexContainerCommand))
 	if command == "" {
-		command = `codex exec --skip-git-repo-check --sandbox read-only --model "$CODEX_MODEL" -`
+		reasoningConfig := ""
+		if effort := sanitizeCodexOption(input.ReasoningEffort); effort != "" {
+			reasoningConfig = ` -c 'model_reasoning_effort="` + effort + `"'`
+		}
+		command = `codex exec --json --skip-git-repo-check --sandbox read-only --model "$CODEX_MODEL"` + reasoningConfig + ` --output-last-message "$CODEX_OUTPUT_FILE" -`
 	}
 	prompt := buildRefinePrompt(input)
-	output, err := runDockerCodex(ctx, image, command, model, input.ArtifactRoot, input.UserID, prompt)
+	if input.Emit != nil {
+		input.Emit(contract.StudyPipelineRefineEvent{
+			Type:            "runner",
+			Message:         "Starting Codex in the per-user Docker runner.",
+			Model:           model,
+			ReasoningEffort: sanitizeCodexOption(input.ReasoningEffort),
+		})
+	}
+	output, err := runDockerCodex(ctx, image, command, model, input.ReasoningEffort, input.ArtifactRoot, input.UserID, prompt, input.Emit)
 	if err != nil {
 		return RefineOutput{}, fmt.Errorf("codex refinement failed for model %s: %w", model, err)
 	}
@@ -790,11 +825,26 @@ func CodexModelCatalog(ctx context.Context, userID string, root string) (contrac
 	if image == "" {
 		return contract.CodexModelCatalogResponse{}, fmt.Errorf("%s is not configured", EnvCodexDockerImage)
 	}
-	output, err := runDockerCodex(ctx, image, "codex debug models", "", firstNonEmpty(root, ArtifactRootFromEnv()), userID, "")
+	output, err := runDockerCodex(ctx, image, "codex debug models", "", "", firstNonEmpty(root, ArtifactRootFromEnv()), userID, "", nil)
 	if err != nil {
 		return contract.CodexModelCatalogResponse{}, err
 	}
 	return contract.CodexModelCatalogResponse{Models: parseCodexModels(output)}, nil
+}
+
+func CodexAuthenticated(ctx context.Context, userID string, root string) (bool, string, error) {
+	image := strings.TrimSpace(os.Getenv(EnvCodexDockerImage))
+	if image == "" {
+		return false, "", fmt.Errorf("%s is not configured", EnvCodexDockerImage)
+	}
+	output, err := runDockerCodex(ctx, image, "codex login status", "", "", firstNonEmpty(root, ArtifactRootFromEnv()), userID, "", nil)
+	if err == nil {
+		return true, strings.TrimSpace(output), nil
+	}
+	if strings.Contains(err.Error(), "Not logged in") || strings.Contains(output, "Not logged in") {
+		return false, "Not logged in", nil
+	}
+	return false, strings.TrimSpace(output), nil
 }
 
 func sanitizeCodexModel(value string) string {
@@ -803,6 +853,14 @@ func sanitizeCodexModel(value string) string {
 		return ""
 	}
 	return model
+}
+
+func sanitizeCodexOption(value string) string {
+	option := strings.TrimSpace(value)
+	if option == "" || len([]rune(option)) > 80 || strings.ContainsAny(option, "\r\n\t") || unsafePathRe.MatchString(option) {
+		return ""
+	}
+	return option
 }
 
 func parseCodexModels(value string) []contract.CodexModelOption {
@@ -825,6 +883,7 @@ func parseCodexModels(value string) []contract.CodexModelOption {
 			Description:            stringValue(item["description"]),
 			DefaultReasoningEffort: stringValue(item["default_reasoning_level"]),
 			ReasoningEfforts:       parseReasoningEfforts(item["supported_reasoning_levels"]),
+			SpeedTiers:             stringSliceValue(item["additional_speed_tiers"]),
 		})
 	}
 	return models
@@ -872,7 +931,22 @@ func stringValue(value any) string {
 	return strings.TrimSpace(text)
 }
 
-func runDockerCodex(ctx context.Context, image string, command string, model string, artifactRoot string, userID string, prompt string) (string, error) {
+func stringSliceValue(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	values := []string{}
+	for _, item := range items {
+		text := stringValue(item)
+		if text != "" {
+			values = append(values, text)
+		}
+	}
+	return values
+}
+
+func runDockerCodex(ctx context.Context, image string, command string, model string, reasoningEffort string, artifactRoot string, userID string, prompt string, emit func(contract.StudyPipelineRefineEvent)) (string, error) {
 	userSegment := safeSegment(firstNonEmpty(userID, "anonymous"))
 	stateRoot := filepath.Join(firstNonEmpty(artifactRoot, ArtifactRootFromEnv()), "codex-users", userSegment)
 	if err := os.MkdirAll(stateRoot, 0o700); err != nil {
@@ -880,10 +954,16 @@ func runDockerCodex(ctx context.Context, image string, command string, model str
 	}
 	_ = os.Chown(stateRoot, 10001, 10001)
 	_ = os.Chmod(stateRoot, 0o700)
+	outputPath := filepath.Join(stateRoot, "last-refine-"+safeSegment(firstNonEmpty(model, "catalog"))+".md")
+	if prompt != "" {
+		_ = os.Remove(outputPath)
+	}
 	args := []string{
 		"run", "--rm", "-i",
 		"--user", "0:0",
 		"-e", "CODEX_MODEL=" + model,
+		"-e", "CODEX_REASONING_EFFORT=" + sanitizeCodexOption(reasoningEffort),
+		"-e", "CODEX_OUTPUT_FILE=/home/codex/.codex/" + filepath.Base(outputPath),
 		"-e", "HOME=/home/codex",
 		"-e", "CODEX_HOME=/home/codex/.codex",
 		"-v", stateRoot + ":/home/codex/.codex",
@@ -892,12 +972,125 @@ func runDockerCodex(ctx context.Context, image string, command string, model str
 	}
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Stdin = strings.NewReader(prompt)
-	output, err := cmd.CombinedOutput()
-	text := strings.TrimSpace(string(output))
+	text, err := runCommandWithOptionalEvents(cmd, emit)
+	if fileOutput := readOptionalOutputFile(outputPath); fileOutput != "" {
+		if err != nil {
+			return fileOutput, fmt.Errorf("%w (%s)", err, compactProcessOutput(text))
+		}
+		return fileOutput, nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("%w (%s)", err, compactProcessOutput(text))
 	}
 	return text, nil
+}
+
+func runCommandWithOptionalEvents(cmd *exec.Cmd, emit func(contract.StudyPipelineRefineEvent)) (string, error) {
+	if emit == nil {
+		output, err := cmd.CombinedOutput()
+		return strings.TrimSpace(string(output)), err
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", err
+	}
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+
+	lines := make(chan string, 32)
+	done := make(chan struct{}, 2)
+	scan := func(prefix string, reader io.Reader) {
+		defer func() { done <- struct{}{} }()
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			if prefix != "" {
+				line = prefix + line
+			}
+			lines <- line
+		}
+	}
+	go scan("", stdout)
+	go scan("stderr: ", stderr)
+	go func() {
+		<-done
+		<-done
+		close(lines)
+	}()
+
+	var output strings.Builder
+	for line := range lines {
+		output.WriteString(line)
+		output.WriteByte('\n')
+		emitCodexLineEvent(line, emit)
+	}
+	err = cmd.Wait()
+	return strings.TrimSpace(output.String()), err
+}
+
+func readOptionalOutputFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func emitCodexLineEvent(line string, emit func(contract.StudyPipelineRefineEvent)) {
+	if emit == nil {
+		return
+	}
+	cleanLine := strings.TrimPrefix(line, "stderr: ")
+	var event map[string]any
+	if err := json.Unmarshal([]byte(cleanLine), &event); err == nil {
+		emit(contract.StudyPipelineRefineEvent{
+			Type:    "codex",
+			Message: codexEventMessage(event),
+		})
+		return
+	}
+	if strings.Contains(line, "ERROR") || strings.Contains(line, "Reconnecting") {
+		emit(contract.StudyPipelineRefineEvent{
+			Type:    "codex",
+			Message: compactProcessOutput(line),
+		})
+	}
+}
+
+func codexEventMessage(event map[string]any) string {
+	eventType := stringValue(event["type"])
+	switch eventType {
+	case "thread.started":
+		return "Codex session started."
+	case "turn.started":
+		return "Codex is reading the extracted content."
+	case "turn.failed":
+		if details, ok := event["error"].(map[string]any); ok {
+			return compactProcessOutput(stringValue(details["message"]))
+		}
+		return "Codex refinement failed."
+	case "error":
+		return compactProcessOutput(stringValue(event["message"]))
+	case "item.started":
+		return "Codex started a work item."
+	case "item.completed":
+		return "Codex completed a work item."
+	default:
+		if eventType != "" {
+			return "Codex event: " + eventType
+		}
+		return "Codex is working."
+	}
 }
 
 func buildRefinePrompt(input RefineInput) string {
