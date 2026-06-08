@@ -40,6 +40,13 @@ func RunCodexChat(ctx context.Context, input CodexChatInput) (contract.CodexRunR
 
 	model := sanitizeCodexModel(input.Model)
 	reasoningEffort := sanitizeCodexOption(input.ReasoningEffort)
+	if model == "" {
+		catalog, err := CodexModelCatalog(ctx, input.UserID, input.ArtifactRoot)
+		if err != nil {
+			return contract.CodexRunResponse{}, err
+		}
+		model, reasoningEffort = selectDefaultCodexChatModel(catalog, reasoningEffort)
+	}
 	command := buildCodexChatCommand(model, reasoningEffort, len(input.OutputSchema) > 0)
 	if input.Emit != nil {
 		input.Emit(contract.StudyPipelineRefineEvent{
@@ -102,6 +109,21 @@ func buildCodexChatPrompt(prompt string, images []contract.CodexRunImage) string
 		return prompt
 	}
 	return prompt + "\n\nAttached Moodle page screenshots were provided by the web UI: " + strings.Join(names, ", ") + "."
+}
+
+func selectDefaultCodexChatModel(catalog contract.CodexModelCatalogResponse, requestedReasoningEffort string) (string, string) {
+	for _, option := range catalog.Models {
+		model := sanitizeCodexModel(option.ID)
+		if model == "" {
+			continue
+		}
+		reasoningEffort := requestedReasoningEffort
+		if reasoningEffort == "" {
+			reasoningEffort = sanitizeCodexOption(option.DefaultReasoningEffort)
+		}
+		return model, reasoningEffort
+	}
+	return "", requestedReasoningEffort
 }
 
 func parseCodexChatOutput(output string) (contract.CodexRunResponse, error) {
