@@ -36,6 +36,14 @@ func Codex(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
+		if r.Method == http.MethodDelete {
+			if err := studypipeline.CodexLogout(r.Context(), clerkUserID, ""); err != nil {
+				svc.WriteError(w, err)
+				return
+			}
+			svc.WriteJSON(w, http.StatusOK, map[string]any{"authenticated": false})
+			return
+		}
 		if r.Method != http.MethodPost {
 			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return

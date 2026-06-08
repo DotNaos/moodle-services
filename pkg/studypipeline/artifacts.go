@@ -859,6 +859,18 @@ func CodexAuthenticated(ctx context.Context, userID string, root string) (bool, 
 	return false, strings.TrimSpace(output), nil
 }
 
+func CodexLogout(ctx context.Context, userID string, root string) error {
+	image := strings.TrimSpace(os.Getenv(EnvCodexDockerImage))
+	if image == "" {
+		return fmt.Errorf("%s is not configured", EnvCodexDockerImage)
+	}
+	_, err := runDockerCodex(ctx, image, "codex logout", "", "", firstNonEmpty(root, ArtifactRootFromEnv()), userID, "", nil)
+	if err != nil && !strings.Contains(err.Error(), "Not logged in") {
+		return err
+	}
+	return nil
+}
+
 func StartCodexDeviceAuth(ctx context.Context, userID string, root string) (CodexDeviceAuthStart, error) {
 	authenticated, _, err := CodexAuthenticated(ctx, userID, root)
 	if err != nil {
