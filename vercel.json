@@ -1,4 +1,5 @@
 {
+  "ignoreCommand": "echo 'moodle-services deploys to VPS; skip Vercel build' && exit 0",
   "rewrites": [
     {
       "source": "/.well-known/oauth-protected-resource",
