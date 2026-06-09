@@ -51,8 +51,12 @@ type (
 	WebexCredentials                  = moodleservice.WebexCredentials
 	WebexRecording                    = moodleservice.WebexRecording
 	MobileBridgeRequest               = store.MobileBridgeRequest
+	Resource                          = moodle.Resource
 	Service                           = moodleservice.Service
 	Store                             = store.Store
+	StudyPipelineMaterialRecord       = store.StudyPipelineMaterialRecord
+	StudyPipelineRecordInput          = store.StudyPipelineRecordInput
+	StudyPipelineTaskLinkRecord       = store.StudyPipelineTaskLinkRecord
 	UpsertMoodleAccountInput          = store.UpsertMoodleAccountInput
 	User                              = store.User
 )

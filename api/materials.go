@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DotNaos/moodle-services/internal/moodle"
-	"github.com/DotNaos/moodle-services/internal/store"
 	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 	svc "github.com/DotNaos/moodle-services/pkg/moodleservices"
 	"github.com/DotNaos/moodle-services/pkg/studypipeline"
@@ -57,7 +55,7 @@ func Materials(w http.ResponseWriter, r *http.Request) {
 	svc.WriteJSON(w, http.StatusOK, contract.MaterialsResponse{Materials: materials})
 }
 
-func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Service, courseID string, materials []moodle.Resource, studyStore *svc.Store, studyUserID string) {
+func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Service, courseID string, materials []svc.Resource, studyStore *svc.Store, studyUserID string) {
 	action := strings.TrimSpace(r.URL.Query().Get("action"))
 	stage := strings.TrimSpace(r.URL.Query().Get("stage"))
 	options := studypipeline.RunOptions{
@@ -74,7 +72,7 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 				svc.WriteError(w, err)
 				return
 			}
-			if err := recordStudyPipeline(r, studyStore, studyUserID, response); err != nil {
+			if err := svc.RecordStudyPipelineResponse(r.Context(), studyStore, studyUserID, response); err != nil {
 				svc.WriteError(w, err)
 				return
 			}
@@ -92,7 +90,7 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			svc.WriteError(w, err)
 			return
 		}
-		if err := recordStudyPipeline(r, studyStore, studyUserID, response); err != nil {
+		if err := svc.RecordStudyPipelineResponse(r.Context(), studyStore, studyUserID, response); err != nil {
 			svc.WriteError(w, err)
 			return
 		}
@@ -184,53 +182,6 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 	default:
 		svc.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "unknown study pipeline action"})
 	}
-}
-
-func recordStudyPipeline(r *http.Request, st *svc.Store, userID string, response contract.StudyPipelineResponse) error {
-	if st == nil || strings.TrimSpace(userID) == "" {
-		return nil
-	}
-	return st.RecordStudyPipeline(r.Context(), store.StudyPipelineRecordInput{
-		UserID:       userID,
-		CourseID:     response.CourseID,
-		Stage:        response.Stage,
-		ArtifactRoot: response.ArtifactRoot,
-		Summary:      response.Summary,
-		Materials:    studyMaterialRecords(response.Materials),
-		TaskLinks:    studyTaskLinkRecords(response.TaskLinks),
-	})
-}
-
-func studyMaterialRecords(materials []contract.StudyPipelineMaterial) []store.StudyPipelineMaterialRecord {
-	out := make([]store.StudyPipelineMaterialRecord, 0, len(materials))
-	for _, material := range materials {
-		out = append(out, store.StudyPipelineMaterialRecord{
-			ID:             material.ID,
-			Name:           material.Name,
-			URL:            material.URL,
-			ResourceType:   material.ResourceType,
-			FileType:       material.FileType,
-			SectionID:      material.SectionID,
-			SectionName:    material.SectionName,
-			Classification: material.Type,
-		})
-	}
-	return out
-}
-
-func studyTaskLinkRecords(links []contract.StudyPipelineTaskLink) []store.StudyPipelineTaskLinkRecord {
-	out := make([]store.StudyPipelineTaskLinkRecord, 0, len(links))
-	for _, link := range links {
-		record := store.StudyPipelineTaskLinkRecord{
-			TaskResourceID: link.Task.ID,
-			Status:         link.Status,
-		}
-		if link.Solution != nil {
-			record.SolutionResourceID = link.Solution.ID
-		}
-		out = append(out, record)
-	}
-	return out
 }
 
 func defaultStage(stage string) string {
