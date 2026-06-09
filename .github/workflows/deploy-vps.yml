@@ -1,0 +1,73 @@
+name: Deploy VPS
+
+on:
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Container image to deploy
+        required: false
+        default: ghcr.io/dotnaos/moodle-services:latest
+        type: string
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Deploy moodle-services on VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          VPS_DEPLOY_DIR: ${{ secrets.VPS_DEPLOY_DIR }}
+          VPS_HEALTH_URL: ${{ secrets.VPS_HEALTH_URL }}
+          MOODLE_DOCKER_IMAGE: ${{ inputs.image || 'ghcr.io/dotnaos/moodle-services:latest' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_USER:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
+            echo "Missing VPS_HOST, VPS_USER, or VPS_SSH_KEY repository secrets." >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          if [[ -n "${VPS_SSH_KNOWN_HOSTS:-}" ]]; then
+            printf '%s\n' "${VPS_SSH_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "${VPS_HOST}" >> ~/.ssh/known_hosts
+          fi
+
+          remote_env=(
+            "MOODLE_DOCKER_IMAGE=${MOODLE_DOCKER_IMAGE}"
+          )
+          if [[ -n "${VPS_DEPLOY_DIR:-}" ]]; then
+            remote_env+=("MOODLE_DEPLOY_DIR=${VPS_DEPLOY_DIR}")
+          fi
+          if [[ -n "${VPS_HEALTH_URL:-}" ]]; then
+            remote_env+=("MOODLE_HEALTH_URL=${VPS_HEALTH_URL}")
+          fi
+
+          env_prefix=""
+          for item in "${remote_env[@]}"; do
+            env_prefix+="${item} "
+          done
+
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            "${env_prefix}bash -s" < scripts/deploy-vps.sh
