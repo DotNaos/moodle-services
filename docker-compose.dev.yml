@@ -1,4 +1,9 @@
 services:
+  codex-runner:
+    build: ./docker/codex-runner
+    image: moodle-study-codex-runner:local
+    profiles: ["codex-build"]
+
   postgres:
     image: postgres:16-bookworm
     environment:
@@ -34,6 +39,7 @@ services:
       MOODLE_DOCKER_HOST_DATA_DIR: ${HOME}/.moodle
       MOODLE_OCR_CACHE_DIR: /data/ocr/cache
       MOODLE_STUDY_ARTIFACT_ROOT: /data/study
+      MOODLE_STUDY_CODEX_DOCKER_IMAGE: moodle-study-codex-runner:local
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
