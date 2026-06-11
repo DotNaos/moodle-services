@@ -1,14 +1,26 @@
 package handler
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 	svc "github.com/DotNaos/moodle-services/pkg/moodleservices"
 	"github.com/DotNaos/moodle-services/pkg/studypipeline"
 )
+
+func stripBase64DataURLPrefix(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "data:") {
+		if idx := strings.IndexByte(value, ','); idx >= 0 {
+			return value[idx+1:]
+		}
+	}
+	return value
+}
 
 func Codex(w http.ResponseWriter, r *http.Request) {
 	if !svc.AllowMethods(w, r, http.MethodGet, http.MethodPost, http.MethodDelete) {
@@ -90,13 +102,53 @@ func Codex(w http.ResponseWriter, r *http.Request) {
 		}
 		svc.WriteJSON(w, http.StatusOK, models)
 	case "files":
-		if r.Method == http.MethodGet {
-			svc.WriteJSON(w, http.StatusOK, map[string]any{"files": []string{}})
+		clerkUserID, ok := authorizeInternalRequest(w, r, true)
+		if !ok {
 			return
 		}
-		svc.WriteJSON(w, http.StatusNotImplemented, map[string]string{
-			"error": "Codex file storage has moved to moodle-services, but it is not configured on this deployment yet.",
-		})
+		if r.Method == http.MethodGet {
+			if rel := strings.TrimSpace(r.URL.Query().Get("path")); rel != "" {
+				data, contentType, err := studypipeline.OpenCodexWorkspaceFile(clerkUserID, "", rel)
+				if err != nil {
+					svc.WriteJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+					return
+				}
+				w.Header().Set("Content-Type", contentType)
+				w.Header().Set("Cache-Control", "no-store")
+				_, _ = w.Write(data)
+				return
+			}
+			files, err := studypipeline.CodexWorkspaceFiles(clerkUserID, "")
+			if err != nil {
+				svc.WriteError(w, err)
+				return
+			}
+			svc.WriteJSON(w, http.StatusOK, map[string]any{"files": files})
+			return
+		}
+		if r.Method == http.MethodPost {
+			var payload struct {
+				Name          string `json:"name"`
+				ContentBase64 string `json:"contentBase64"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Request body must be JSON."})
+				return
+			}
+			data, err := base64.StdEncoding.DecodeString(stripBase64DataURLPrefix(payload.ContentBase64))
+			if err != nil {
+				svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid base64 file content."})
+				return
+			}
+			file, err := studypipeline.SaveCodexUpload(clerkUserID, "", payload.Name, data)
+			if err != nil {
+				svc.WriteError(w, err)
+				return
+			}
+			svc.WriteJSON(w, http.StatusOK, map[string]any{"file": file})
+			return
+		}
+		svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	case "run":
 		handleCodexRun(w, r)
 	default:
@@ -137,6 +189,18 @@ func handleCodexRunStream(w http.ResponseWriter, r *http.Request, clerkUserID st
 	writeCodexStreamEvent(w, map[string]any{"type": "thread", "threadId": nil})
 
 	result, err := studypipeline.RunCodexChat(r.Context(), contractToCodexChatInput(clerkUserID, body, func(event contract.StudyPipelineRefineEvent) {
+		// Real tool/MCP/web-search calls surface as "tool" events with the
+		// actual title and live status; lifecycle noise is "status" (the web
+		// client hides it).
+		if event.Category == "tool" {
+			writeCodexStreamEvent(w, map[string]any{
+				"type":   "tool",
+				"id":     event.ToolID,
+				"title":  event.ToolTitle,
+				"status": event.ToolStatus,
+			})
+			return
+		}
 		message := event.Message
 		if event.Error != "" {
 			message = event.Error
@@ -145,9 +209,8 @@ func handleCodexRunStream(w http.ResponseWriter, r *http.Request, clerkUserID st
 			message = "Codex is working."
 		}
 		writeCodexStreamEvent(w, map[string]any{
-			"type":   "tool",
-			"title":  message,
-			"status": "running",
+			"type":  "status",
+			"title": message,
 		})
 	}))
 	if err != nil {
@@ -167,13 +230,14 @@ func handleCodexRunStream(w http.ResponseWriter, r *http.Request, clerkUserID st
 
 func contractToCodexChatInput(clerkUserID string, body contract.CodexRunRequest, emit func(contract.StudyPipelineRefineEvent)) studypipeline.CodexChatInput {
 	return studypipeline.CodexChatInput{
-		UserID:          clerkUserID,
-		Prompt:          body.Prompt,
-		Images:          body.Images,
-		Model:           body.Model,
-		ReasoningEffort: body.ReasoningEffort,
-		OutputSchema:    body.OutputSchema,
-		Emit:            emit,
+		UserID:           clerkUserID,
+		Prompt:           body.Prompt,
+		Images:           body.Images,
+		AttachmentImages: body.AttachmentImages,
+		Model:            body.Model,
+		ReasoningEffort:  body.ReasoningEffort,
+		OutputSchema:     body.OutputSchema,
+		Emit:             emit,
 	}
 }
 

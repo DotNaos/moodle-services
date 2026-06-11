@@ -36,7 +36,7 @@ func (s *Store) UserIsAdmin(ctx context.Context, clerkUserID string, configuredA
 	return configuredAdmin, err
 }
 
-func (s *Store) ListAdminUsers(ctx context.Context, defaultQuotaBytes int64) ([]AdminUser, error) {
+func (s *Store) ListAdminUsers(ctx context.Context, defaultQuotaBytes int64, adminQuotaBytes int64) ([]AdminUser, error) {
 	rows, err := s.db.QueryContext(ctx, adminUserSelectSQL("", `
 		order by lower(nullif(u.display_name, '')) nulls last, u.created_at desc
 	`))
@@ -46,7 +46,7 @@ func (s *Store) ListAdminUsers(ctx context.Context, defaultQuotaBytes int64) ([]
 	defer rows.Close()
 	users := []AdminUser{}
 	for rows.Next() {
-		user, err := scanAdminUser(rows, defaultQuotaBytes)
+		user, err := scanAdminUser(rows, defaultQuotaBytes, adminQuotaBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -55,7 +55,7 @@ func (s *Store) ListAdminUsers(ctx context.Context, defaultQuotaBytes int64) ([]
 	return users, rows.Err()
 }
 
-func (s *Store) UpdateAdminUser(ctx context.Context, userID string, quotaBytes *int64, resetQuota bool, isAdmin *bool, defaultQuotaBytes int64) (AdminUser, error) {
+func (s *Store) UpdateAdminUser(ctx context.Context, userID string, quotaBytes *int64, resetQuota bool, isAdmin *bool, defaultQuotaBytes int64, adminQuotaBytes int64) (AdminUser, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return AdminUser{}, err
@@ -88,7 +88,7 @@ func (s *Store) UpdateAdminUser(ctx context.Context, userID string, quotaBytes *
 		}
 	}
 	var updated AdminUser
-	err = tx.QueryRowContext(ctx, adminUserSelectSQL("where u.id = $1", ""), userID).Scan(adminUserScanDest(&updated, defaultQuotaBytes)...)
+	err = tx.QueryRowContext(ctx, adminUserSelectSQL("where u.id = $1", ""), userID).Scan(adminUserScanDest(&updated, defaultQuotaBytes, adminQuotaBytes)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AdminUser{}, ErrNotFound
 	}
@@ -125,13 +125,13 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanAdminUser(scanner rowScanner, defaultQuotaBytes int64) (AdminUser, error) {
+func scanAdminUser(scanner rowScanner, defaultQuotaBytes int64, adminQuotaBytes int64) (AdminUser, error) {
 	var user AdminUser
-	err := scanner.Scan(adminUserScanDest(&user, defaultQuotaBytes)...)
+	err := scanner.Scan(adminUserScanDest(&user, defaultQuotaBytes, adminQuotaBytes)...)
 	return user, err
 }
 
-func adminUserScanDest(user *AdminUser, defaultQuotaBytes int64) []any {
+func adminUserScanDest(user *AdminUser, defaultQuotaBytes int64, adminQuotaBytes int64) []any {
 	var quotaOverride sql.NullInt64
 	return []any{
 		&user.ID,
@@ -140,7 +140,7 @@ func adminUserScanDest(user *AdminUser, defaultQuotaBytes int64) []any {
 		&user.DisplayName,
 		&user.ClerkUserID,
 		&user.IsAdmin,
-		quotaScanner{target: &quotaOverride, user: user, defaultQuotaBytes: defaultQuotaBytes},
+		quotaScanner{target: &quotaOverride, user: user, defaultQuotaBytes: defaultQuotaBytes, adminQuotaBytes: adminQuotaBytes},
 		&user.CodexStateUsageBytes,
 		&user.CodexStateSnapshotCount,
 	}
@@ -150,8 +150,12 @@ type quotaScanner struct {
 	target            *sql.NullInt64
 	user              *AdminUser
 	defaultQuotaBytes int64
+	adminQuotaBytes   int64
 }
 
+// Scan resolves the effective quota: an explicit per-user override wins;
+// admins otherwise get the admin default; everyone else the user default.
+// Relies on user.IsAdmin being scanned before this column.
 func (s quotaScanner) Scan(value any) error {
 	if err := s.target.Scan(value); err != nil {
 		return err
@@ -160,6 +164,11 @@ func (s quotaScanner) Scan(value any) error {
 		value := s.target.Int64
 		s.user.CodexStateQuotaBytes = value
 		s.user.CodexStateQuotaOverrideBytes = &value
+		return nil
+	}
+	if s.user.IsAdmin && s.adminQuotaBytes > 0 {
+		s.user.CodexStateQuotaBytes = s.adminQuotaBytes
+		s.user.CodexStateQuotaConfiguredByDefault = true
 		return nil
 	}
 	s.user.CodexStateQuotaBytes = s.defaultQuotaBytes

@@ -60,9 +60,25 @@ func Keys(w http.ResponseWriter, r *http.Request) {
 			svc.WriteError(w, err)
 			return
 		}
+		// Persist the credentials (encrypted) so an expired session can be
+		// re-created silently without asking the user to sign in again.
+		credentialsJSON, err := json.Marshal(map[string]string{
+			"username": strings.TrimSpace(input.Username),
+			"password": input.Password,
+		})
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		encryptedCredentials, err := box.EncryptString(string(credentialsJSON))
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
 		if err := st.UpsertWebexSession(r.Context(), svc.UpsertWebexSessionInput{
 			UserID:                    user.ID,
 			EncryptedWebexSessionJSON: encryptedSessionJSON,
+			EncryptedWebexCredentials: encryptedCredentials,
 		}); err != nil {
 			svc.WriteError(w, err)
 			return

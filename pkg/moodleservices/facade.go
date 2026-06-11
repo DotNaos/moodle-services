@@ -61,6 +61,10 @@ type (
 	User                              = store.User
 )
 
+// ErrWebexCredentialsRequired is re-exported so HTTP handlers can detect an
+// expired/missing Webex session and trigger server-side auto-renew.
+var ErrWebexCredentialsRequired = moodleservice.ErrWebexCredentialsRequired
+
 func APIKeyFromRequest(r *http.Request) string {
 	return auth.APIKeyFromRequest(r)
 }

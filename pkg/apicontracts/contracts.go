@@ -77,6 +77,16 @@ type CalendarEventsResponse struct {
 	Events []moodle.CalendarEvent `json:"events"`
 }
 
+type CalendarSubscriptionRequest struct {
+	URL string `json:"url"`
+}
+
+type CalendarSubscriptionResponse struct {
+	Configured bool   `json:"configured"`
+	URLHint    string `json:"urlHint,omitempty"`
+	Saved      bool   `json:"saved,omitempty"`
+}
+
 type MaterialTextResponse struct {
 	Document moodleservice.FetchDocument `json:"document"`
 }
@@ -204,6 +214,13 @@ type StudyPipelineRefineEvent struct {
 	Target          *StudyPipelineContentRef `json:"target,omitempty"`
 	ContentPreview  string                   `json:"contentPreview,omitempty"`
 	Error           string                   `json:"error,omitempty"`
+	// Category classifies a Codex stream event as a real "tool" call (shell
+	// command, MCP tool, web search) or "status" lifecycle noise. Empty means
+	// status. ToolTitle/ToolStatus/ToolID carry the surfaced tool-call details.
+	Category   string `json:"category,omitempty"`
+	ToolTitle  string `json:"toolTitle,omitempty"`
+	ToolStatus string `json:"toolStatus,omitempty"`
+	ToolID     string `json:"toolId,omitempty"`
 }
 
 type CodexModelCatalogResponse struct {
@@ -225,6 +242,15 @@ type CodexReasoningOption struct {
 	Description string `json:"description,omitempty"`
 }
 
+// CodexWorkspaceFile is one entry in a user's per-user Codex volume, returned
+// as a flat list (slash-separated relative paths) for the workspace file tree.
+type CodexWorkspaceFile struct {
+	Path       string `json:"path"`
+	Size       int64  `json:"size"`
+	Dir        bool   `json:"dir"`
+	ModifiedAt string `json:"modifiedAt,omitempty"`
+}
+
 type CodexRunRequest struct {
 	Prompt          string          `json:"prompt"`
 	Images          []CodexRunImage `json:"images,omitempty"`
@@ -232,6 +258,9 @@ type CodexRunRequest struct {
 	ReasoningEffort string          `json:"reasoningEffort,omitempty"`
 	OutputSchema    json.RawMessage `json:"outputSchema,omitempty"`
 	Stream          bool            `json:"stream,omitempty"`
+	// AttachmentImages are basenames of uploaded image files (under uploads/)
+	// to attach to the Codex prompt via `codex exec -i` for actual vision.
+	AttachmentImages []string `json:"attachmentImages,omitempty"`
 }
 
 type CodexRunImage struct {

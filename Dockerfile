@@ -4,13 +4,14 @@ WORKDIR /workspace
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Download and install playwright driver and chromium before copying the source
+# so this slow step (large Chromium download) caches across code changes.
+RUN go run github.com/playwright-community/playwright-go/cmd/playwright install chromium
+
 COPY . .
 ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o /out/moodle ./cmd/moodle
-
-# Download and install playwright driver and chromium (no large OS deps here, those are installed in the final image)
-RUN go run github.com/playwright-community/playwright-go/cmd/playwright install chromium
 
 FROM debian:bookworm-slim
 ARG DOCKER_CLI_VERSION=28.0.4

@@ -31,13 +31,17 @@ func TestParsePositiveInt64EnvUsesConfiguredValue(t *testing.T) {
 	}
 }
 
-func TestLoadServerEnvUses128MiBDefaultCodexQuota(t *testing.T) {
+func TestLoadServerEnvUsesDefaultCodexQuotas(t *testing.T) {
 	t.Setenv(EnvCodexStateQuota, "")
+	t.Setenv(EnvCodexStateAdminQuota, "")
 
 	cfg := LoadServerEnv()
 
-	if cfg.CodexStateUserQuotaBytes != 128*1024*1024 {
-		t.Fatalf("quota = %d, want 128 MiB", cfg.CodexStateUserQuotaBytes)
+	if cfg.CodexStateUserQuotaBytes != 512*1024*1024 {
+		t.Fatalf("user quota = %d, want 512 MiB", cfg.CodexStateUserQuotaBytes)
+	}
+	if cfg.CodexStateAdminQuotaBytes != 1024*1024*1024 {
+		t.Fatalf("admin quota = %d, want 1 GiB", cfg.CodexStateAdminQuotaBytes)
 	}
 }
 

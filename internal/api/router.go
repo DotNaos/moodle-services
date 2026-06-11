@@ -131,6 +131,7 @@ func registerServerlessParityRoutes(router *chi.Mux) {
 	}))
 	router.HandleFunc("/api/calendar", withQuery(serverless.Courses, "route", "calendar"))
 	router.HandleFunc("/api/webex/credentials", withQuery(serverless.Keys, "route", "webex-credentials"))
+	router.HandleFunc("/api/user/settings", serverless.UserSettings)
 }
 
 func withQuery(next http.HandlerFunc, key string, value string) http.HandlerFunc {

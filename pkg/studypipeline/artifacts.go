@@ -1245,18 +1245,96 @@ func emitCodexLineEvent(line string, emit func(contract.StudyPipelineRefineEvent
 	cleanLine := strings.TrimPrefix(line, "stderr: ")
 	var event map[string]any
 	if err := json.Unmarshal([]byte(cleanLine), &event); err == nil {
-		emit(contract.StudyPipelineRefineEvent{
+		refineEvent := contract.StudyPipelineRefineEvent{
 			Type:    "codex",
 			Message: codexEventMessage(event),
-		})
+		}
+		if category, title, status, id := classifyCodexToolEvent(event); category == "tool" {
+			refineEvent.Category = "tool"
+			refineEvent.ToolTitle = title
+			refineEvent.ToolStatus = status
+			refineEvent.ToolID = id
+		} else {
+			refineEvent.Category = "status"
+		}
+		emit(refineEvent)
 		return
 	}
 	if strings.Contains(line, "ERROR") || strings.Contains(line, "Reconnecting") {
 		emit(contract.StudyPipelineRefineEvent{
-			Type:    "codex",
-			Message: humanCodexProcessMessage(line),
+			Type:     "codex",
+			Category: "status",
+			Message:  humanCodexProcessMessage(line),
 		})
 	}
+}
+
+// classifyCodexToolEvent inspects a raw Codex `exec --json` event. If it
+// represents a surfaced tool call (shell command, MCP tool, or web search) it
+// returns category "tool" with a human title, normalized status and the item
+// id. Everything else (session/turn lifecycle, reasoning, file changes, todo
+// lists) is category "status".
+func classifyCodexToolEvent(event map[string]any) (category, title, status, id string) {
+	switch stringValue(event["type"]) {
+	case "item.started", "item.updated", "item.completed":
+	default:
+		return "status", "", "", ""
+	}
+	item, ok := event["item"].(map[string]any)
+	if !ok {
+		return "status", "", "", ""
+	}
+	id = stringValue(item["id"])
+	eventType := stringValue(event["type"])
+	itemStatus := normalizeCodexToolStatus(stringValue(item["status"]), eventType)
+	switch stringValue(item["type"]) {
+	case "command_execution":
+		command := compactCodexCommand(stringValue(item["command"]))
+		if command == "" {
+			command = "Shell command"
+		}
+		return "tool", command, itemStatus, id
+	case "mcp_tool_call":
+		name := strings.Trim(stringValue(item["server"])+"."+stringValue(item["tool"]), ".")
+		if name == "" {
+			name = "MCP tool"
+		}
+		return "tool", name, itemStatus, id
+	case "web_search":
+		// web_search items carry no status field; derive it from the wrapper.
+		query := stringValue(item["query"])
+		searchTitle := "Web search"
+		if query != "" {
+			searchTitle = "Web search: " + query
+		}
+		return "tool", searchTitle, normalizeCodexToolStatus("", eventType), id
+	default:
+		return "status", "", "", ""
+	}
+}
+
+func normalizeCodexToolStatus(itemStatus, eventType string) string {
+	switch itemStatus {
+	case "completed":
+		return "completed"
+	case "failed":
+		return "failed"
+	case "in_progress":
+		return "running"
+	}
+	if eventType == "item.completed" {
+		return "completed"
+	}
+	return "running"
+}
+
+func compactCodexCommand(command string) string {
+	command = strings.Join(strings.Fields(command), " ")
+	const limit = 72
+	if len([]rune(command)) <= limit {
+		return command
+	}
+	return string([]rune(command)[:limit-3]) + "..."
 }
 
 func codexEventMessage(event map[string]any) string {
