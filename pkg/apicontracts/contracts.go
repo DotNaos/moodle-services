@@ -309,8 +309,13 @@ type StudyPipelineViewSource struct {
 
 type StudyPipelineProgress struct {
 	Open        int `json:"open"`
+	Done        int `json:"done"`
 	Checked     int `json:"checked"`
 	Correct     int `json:"correct"`
 	Wrong       int `json:"wrong"`
 	NeedsReview int `json:"needsReview"`
+}
+
+type StudyPipelineTaskStatusRequest struct {
+	Status string `json:"status"`
 }

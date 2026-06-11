@@ -179,6 +179,22 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			return
 		}
 		svc.WriteJSON(w, http.StatusOK, map[string]bool{"saved": true})
+	case "task-status":
+		taskID := strings.TrimSpace(r.URL.Query().Get("taskId"))
+		if taskID == "" {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "taskId query parameter is required"})
+			return
+		}
+		var input contract.StudyPipelineTaskStatusRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := studypipeline.RecordTaskStatus("", courseID, taskID, input.Status); err != nil {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, map[string]any{"saved": true, "status": input.Status})
 	default:
 		svc.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "unknown study pipeline action"})
 	}

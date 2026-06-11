@@ -192,6 +192,9 @@ func LoadTaskView(courseID string, resources []moodle.Resource, includeScript bo
 			}
 		}
 		switch status {
+		case "done":
+			progress.Done++
+			progress.Checked++
 		case "checked":
 			progress.Checked++
 		case "correct":
@@ -360,6 +363,37 @@ func RecordAttempt(root string, courseID string, taskIDValue string, attempt con
 		UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
 	}
 	return writeTaskState(root, courseID, state)
+}
+
+func RecordTaskStatus(root string, courseID string, taskIDValue string, status string) error {
+	if strings.TrimSpace(root) == "" {
+		root = ArtifactRootFromEnv()
+	}
+	status = normalizeTaskStatus(status)
+	if status == "" {
+		return fmt.Errorf("unsupported task status")
+	}
+	state, _ := readTaskState(root, courseID)
+	if state.Attempts == nil {
+		state.Attempts = map[string]*taskAttempt{}
+	}
+	attempt := state.Attempts[taskIDValue]
+	if attempt == nil {
+		attempt = &taskAttempt{}
+		state.Attempts[taskIDValue] = attempt
+	}
+	attempt.Status = status
+	attempt.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	return writeTaskState(root, courseID, state)
+}
+
+func normalizeTaskStatus(status string) string {
+	switch strings.TrimSpace(strings.ToLower(status)) {
+	case "open", "started", "done", "checked", "correct", "wrong", "needs_review":
+		return strings.TrimSpace(strings.ToLower(status))
+	default:
+		return ""
+	}
 }
 
 func Messages(root string, courseID string, taskIDValue string) ([]TaskMessage, error) {

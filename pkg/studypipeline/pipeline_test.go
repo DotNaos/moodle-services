@@ -86,6 +86,32 @@ func TestLoadTaskViewDoesNotGenerateFakeTasksWhenCourseHasNoTaskSheets(t *testin
 	}
 }
 
+func TestRecordTaskStatusPersistsDoneProgress(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	resources := []moodle.Resource{
+		{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionName: "Einführung"},
+	}
+	id := taskID(contract.StudyPipelineMaterial{ID: "2", Name: "Aufgabenblatt 01"})
+	if err := RecordTaskStatus(root, courseID, id, "done"); err != nil {
+		t.Fatalf("RecordTaskStatus: %v", err)
+	}
+
+	view, err := LoadTaskView(courseID, resources, false, RunOptions{
+		Root: root,
+		Now:  time.Unix(0, 0),
+	})
+	if err != nil {
+		t.Fatalf("LoadTaskView: %v", err)
+	}
+	if got := view.Sheets[0].Tasks[0].Status; got != "done" {
+		t.Fatalf("status = %q, want done", got)
+	}
+	if view.Progress.Done != 1 || view.Progress.Checked != 1 || view.Progress.Open != 0 {
+		t.Fatalf("unexpected progress: %#v", view.Progress)
+	}
+}
+
 func TestCuratedStageDoesNotDownloadRawMaterials(t *testing.T) {
 	_, err := RunStage("17503", []moodle.Resource{
 		{ID: "1", Name: "Folien 1.1 - Einführung", URL: "https://example.invalid/material.pdf", FileType: "pdf"},
