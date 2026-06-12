@@ -119,6 +119,14 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 			return contract.StudyPipelineResponse{}, err
 		}
 	case "curated":
+		if !hasExtractedArtifacts(root, courseID) {
+			if err := writeRaw(root, courseID, resources, options.Downloader); err != nil {
+				return contract.StudyPipelineResponse{}, err
+			}
+			if err := writeExtracted(root, courseID, resources, options.Downloader); err != nil {
+				return contract.StudyPipelineResponse{}, err
+			}
+		}
 		if err := writeCurated(root, courseID, resources, now); err != nil {
 			return contract.StudyPipelineResponse{}, err
 		}
@@ -144,10 +152,10 @@ func Status(courseID string, resources []moodle.Resource, options RunOptions) co
 	stage := ""
 	status := "planned"
 	switch {
-	case fileExists(filepath.Join(courseDir(root, courseID), "curated", "tasks", "Tasks.mdx")):
+	case fileExists(filepath.Join(courseDir(root, courseID), "curated", "tasks", "Tasks.mdx")) && hasExtractedArtifacts(root, courseID):
 		stage = "curated"
 		status = "curated-ready"
-	case dirExists(filepath.Join(courseDir(root, courseID), "extracted")):
+	case hasExtractedArtifacts(root, courseID):
 		stage = "extracted"
 		status = "extracted-ready"
 	case fileExists(filepath.Join(courseDir(root, courseID), "raw", "resources.json")):
@@ -495,6 +503,9 @@ func writeCurated(root string, courseID string, resources []moodle.Resource, now
 	if now.IsZero() {
 		now = time.Now()
 	}
+	if !hasExtractedArtifacts(root, courseID) {
+		return fmt.Errorf("cannot build curated study material before text extraction")
+	}
 	dir := filepath.Join(courseDir(root, courseID), "curated")
 	if err := os.RemoveAll(filepath.Join(dir, "script")); err != nil {
 		return err
@@ -531,6 +542,43 @@ func writeCurated(root string, courseID string, resources []moodle.Resource, now
 		return err
 	}
 	return nil
+}
+
+func hasExtractedArtifacts(root string, courseID string) bool {
+	base := filepath.Join(courseDir(root, courseID), "extracted")
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			if hasFiles(filepath.Join(base, entry.Name())) {
+				return true
+			}
+			continue
+		}
+		if !entry.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFiles(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			if hasFiles(filepath.Join(dir, entry.Name())) {
+				return true
+			}
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func runCodexCleanupHook(courseID string, curatedDir string) error {
@@ -1175,6 +1223,13 @@ func runDockerCodexWithOptions(ctx context.Context, options dockerCodexOptions) 
 	args := []string{
 		"run", "--rm", "-i",
 		"--user", "0:0",
+		// Codex sandboxes model-run shell commands with a Linux user namespace.
+		// The default Docker seccomp profile blocks namespace creation inside the
+		// container, so commands (even read-only ones like listing uploads/) fail
+		// with "permissions to create a new namespace". Relax seccomp so Codex's
+		// own --sandbox read-only can initialize; the ephemeral per-user container
+		// remains the outer security boundary.
+		"--security-opt", "seccomp=unconfined",
 		"-e", "CODEX_MODEL=" + options.Model,
 		"-e", "CODEX_REASONING_EFFORT=" + sanitizeCodexOption(options.ReasoningEffort),
 		"-e", "CODEX_OUTPUT_FILE=/home/codex/.codex/" + filepath.Base(outputPath),

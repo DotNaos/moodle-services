@@ -80,7 +80,13 @@ var ErrCodexNotAuthenticated = fmt.Errorf("Codex is not connected for this user.
 
 func buildCodexChatCommand(model string, reasoningEffort string, hasSchema bool, attachmentImages []string) string {
 	parts := []string{
-		"codex exec --json --skip-git-repo-check --sandbox read-only",
+		// The ephemeral per-user Docker container is itself the security sandbox
+		// (no host access, only this user's volume mounted). Codex's own bwrap
+		// sandbox cannot create the required mount namespaces inside the
+		// container, so we bypass it — exactly the "externally sandboxed"
+		// scenario that flag is intended for. --cd points the workspace at the
+		// user's volume so the model sees the same "Ablage" (uploads/, etc.).
+		`codex exec --json --skip-git-repo-check --cd "$CODEX_HOME" --dangerously-bypass-approvals-and-sandbox`,
 	}
 	if model != "" {
 		parts = append(parts, `--model "$CODEX_MODEL"`)
