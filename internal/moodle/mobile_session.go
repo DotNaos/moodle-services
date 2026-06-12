@@ -333,14 +333,13 @@ func firstMobileFileURL(module mobileModule, token string) string {
 
 func mobileCourseImage(course MobileCourse, token string) string {
 	image := strings.TrimSpace(course.CourseImage)
-	if image != "" {
-		return image
-	}
-
-	for _, overviewFile := range course.OverviewFiles {
-		image = strings.TrimSpace(overviewFile.FileURL)
-		if image != "" {
-			break
+	if image == "" || isMoodleGeneratedCourseSVG(image) {
+		for _, overviewFile := range course.OverviewFiles {
+			overviewImage := strings.TrimSpace(overviewFile.FileURL)
+			if overviewImage != "" {
+				image = overviewImage
+				break
+			}
 		}
 	}
 	if strings.HasPrefix(strings.ToLower(image), "data:") {
@@ -362,7 +361,8 @@ func mobileCourseImagesByID(courses []MobileCourse, token string) map[int]string
 
 func (c *MobileClient) fillMissingCourseImagesFromCourseDetails(courses []MobileCourse, images map[int]string) {
 	for _, course := range courses {
-		if images[course.ID] != "" {
+		existing := strings.TrimSpace(images[course.ID])
+		if existing != "" && !isMoodleGeneratedCourseSVG(existing) {
 			continue
 		}
 		image := mobileCourseImage(course, "")
