@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -69,12 +70,18 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			stage = defaultStage(stage)
 			response, err := studypipeline.RunStage(courseID, materials, stage, options)
 			if err != nil {
+				if recordErr := recordStudyPipelineFailure(r.Context(), studyStore, studyUserID, courseID, stage, err); recordErr != nil {
+					svc.WriteError(w, recordErr)
+					return
+				}
 				svc.WriteError(w, err)
 				return
 			}
-			if err := svc.RecordStudyPipelineResponse(r.Context(), studyStore, studyUserID, response); err != nil {
+			if run, err := svc.RecordStudyPipelineResponse(r.Context(), studyStore, studyUserID, response); err != nil {
 				svc.WriteError(w, err)
 				return
+			} else if run.ID != "" {
+				response.Run = &run
 			}
 			svc.WriteJSON(w, http.StatusOK, response)
 			return
@@ -87,14 +94,57 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 		}
 		response, err := studypipeline.RunStage(courseID, materials, defaultStage(stage), options)
 		if err != nil {
+			if recordErr := recordStudyPipelineFailure(r.Context(), studyStore, studyUserID, courseID, defaultStage(stage), err); recordErr != nil {
+				svc.WriteError(w, recordErr)
+				return
+			}
 			svc.WriteError(w, err)
 			return
 		}
-		if err := svc.RecordStudyPipelineResponse(r.Context(), studyStore, studyUserID, response); err != nil {
+		if run, err := svc.RecordStudyPipelineResponse(r.Context(), studyStore, studyUserID, response); err != nil {
 			svc.WriteError(w, err)
 			return
+		} else if run.ID != "" {
+			response.Run = &run
 		}
 		svc.WriteJSON(w, http.StatusOK, response)
+	case "runs":
+		if r.Method != http.MethodGet {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		runs, selections, err := studyStore.ListStudyPipelineRuns(r.Context(), studyUserID, courseID)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineRunsResponse{
+			CourseID:         courseID,
+			Runs:             runs,
+			ActiveSelections: selections,
+		})
+	case "select-run":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if studyStore == nil {
+			svc.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "pipeline run storage is not configured"})
+			return
+		}
+		runID := strings.TrimSpace(r.URL.Query().Get("runId"))
+		if runID == "" {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "runId query parameter is required"})
+			return
+		}
+		var input contract.StudyPipelineSelectRunRequest
+		_ = json.NewDecoder(r.Body).Decode(&input)
+		selection, err := studyStore.SelectActiveStudyPipelineRun(r.Context(), studyUserID, courseID, runID, input.Reason)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineSelectRunResponse{Selection: selection})
 	case "inventory":
 		if r.Method != http.MethodGet {
 			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -227,4 +277,29 @@ func defaultStage(stage string) string {
 		return "curated"
 	}
 	return strings.TrimSpace(stage)
+}
+
+func recordStudyPipelineFailure(ctx context.Context, st *svc.Store, userID string, courseID string, stage string, runErr error) error {
+	if st == nil || strings.TrimSpace(userID) == "" || strings.TrimSpace(courseID) == "" {
+		return nil
+	}
+	now := time.Now().UTC()
+	_, err := st.RecordStudyPipeline(ctx, svc.StudyPipelineRecordInput{
+		UserID:       userID,
+		CourseID:     courseID,
+		Stage:        defaultStage(stage),
+		ArtifactRoot: studypipeline.CourseArtifactRoot("", courseID),
+		Status:       "failed",
+		Error:        errorMessage(runErr),
+		StartedAt:    now,
+		FinishedAt:   now,
+	})
+	return err
+}
+
+func errorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

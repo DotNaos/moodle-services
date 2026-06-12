@@ -130,6 +130,14 @@
       "destination": "/api/materials?route=study-pipeline&action=task-view&courseId=:courseId"
     },
     {
+      "source": "/api/courses/:courseId/study-pipeline/runs",
+      "destination": "/api/materials?route=study-pipeline&action=runs&courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/runs/:runId/select",
+      "destination": "/api/materials?route=study-pipeline&action=select-run&courseId=:courseId&runId=:runId"
+    },
+    {
       "source": "/api/courses/:courseId/study-pipeline/tasks/:taskId/chat",
       "destination": "/api/materials?route=study-pipeline&action=chat&courseId=:courseId&taskId=:taskId"
     },

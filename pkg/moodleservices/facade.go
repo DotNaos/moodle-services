@@ -54,8 +54,11 @@ type (
 	Resource                          = moodle.Resource
 	Service                           = moodleservice.Service
 	Store                             = store.Store
+	ActiveRunSelectionRecord          = store.ActiveRunSelectionRecord
+	StudyPipelineArtifactRef          = store.StudyPipelineArtifactRef
 	StudyPipelineMaterialRecord       = store.StudyPipelineMaterialRecord
 	StudyPipelineRecordInput          = store.StudyPipelineRecordInput
+	StudyPipelineRunRecord            = store.StudyPipelineRunRecord
 	StudyPipelineTaskLinkRecord       = store.StudyPipelineTaskLinkRecord
 	UpsertMoodleAccountInput          = store.UpsertMoodleAccountInput
 	User                              = store.User

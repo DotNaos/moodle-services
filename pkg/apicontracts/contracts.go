@@ -110,15 +110,30 @@ type WebexRecordingsResponse struct {
 }
 
 type StudyPipelineResponse struct {
-	CourseID         string                  `json:"courseId"`
-	Status           string                  `json:"status"`
-	Stage            string                  `json:"stage,omitempty"`
-	CreatedAt        string                  `json:"createdAt"`
-	ArtifactRoot     string                  `json:"artifactRoot,omitempty"`
-	Summary          StudyPipelineSummary    `json:"summary"`
-	Materials        []StudyPipelineMaterial `json:"materials"`
-	TaskLinks        []StudyPipelineTaskLink `json:"taskLinks"`
-	MissingSolutions []StudyPipelineMaterial `json:"missingSolutions"`
+	CourseID         string                        `json:"courseId"`
+	Status           string                        `json:"status"`
+	Stage            string                        `json:"stage,omitempty"`
+	CreatedAt        string                        `json:"createdAt"`
+	ArtifactRoot     string                        `json:"artifactRoot,omitempty"`
+	Run              *store.StudyPipelineRunRecord `json:"run,omitempty"`
+	Summary          StudyPipelineSummary          `json:"summary"`
+	Materials        []StudyPipelineMaterial       `json:"materials"`
+	TaskLinks        []StudyPipelineTaskLink       `json:"taskLinks"`
+	MissingSolutions []StudyPipelineMaterial       `json:"missingSolutions"`
+}
+
+type StudyPipelineRunsResponse struct {
+	CourseID         string                           `json:"courseId"`
+	Runs             []store.StudyPipelineRunRecord   `json:"runs"`
+	ActiveSelections []store.ActiveRunSelectionRecord `json:"activeSelections"`
+}
+
+type StudyPipelineSelectRunRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+type StudyPipelineSelectRunResponse struct {
+	Selection store.ActiveRunSelectionRecord `json:"selection"`
 }
 
 type StudyPipelineSummary struct {

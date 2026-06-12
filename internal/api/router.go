@@ -79,6 +79,8 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses/{courseID}/study-pipeline/extracted-documents", studyPipelineExtractedDocumentsRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/script", studyPipelineScriptRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/task-view", studyPipelineTaskViewRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/runs", studyPipelineRunsRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/runs/{runID}/select", studyPipelineSelectRunRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/refine", studyPipelineRefineRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
@@ -235,6 +237,14 @@ func studyPipelineTaskViewRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineReadRoute(opts, "task-view")
 }
 
+func studyPipelineRunsRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "runs")
+}
+
+func studyPipelineSelectRunRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "select-run")
+}
+
 func studyPipelineRefineRoute(opts ServerOptions) http.HandlerFunc {
 	localHandler := studyPipelineRefineHandler(opts)
 	webHandler := withRouteQuery(serverless.Materials, map[string]string{
@@ -318,6 +328,26 @@ func studyPipelineTaskStatusRoute(opts ServerOptions) http.HandlerFunc {
 	}
 }
 
+func studyPipelineRunStateRoute(opts ServerOptions, action string) http.HandlerFunc {
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": action,
+	}, map[string]string{
+		"courseID": "courseId",
+		"runID":    "runId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
+		writeError(w, http.StatusUnauthorized, fmt.Errorf("authentication required"))
+	}
+}
+
 func studyPipelineReadRoute(opts ServerOptions, action string) http.HandlerFunc {
 	localHandler := studyPipelineReadHandler(opts, action)
 	webHandler := withRouteQuery(serverless.Materials, map[string]string{
@@ -378,10 +408,14 @@ func studyPipelineStageHandler(opts ServerOptions, fallbackStage string) http.Ha
 			Now:        time.Now(),
 		})
 		if err != nil {
+			if recordErr := recordLocalStudyPipelineFailure(r.Context(), courseID, stage, err); recordErr != nil {
+				writeError(w, http.StatusInternalServerError, recordErr)
+				return
+			}
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		if err := recordLocalStudyPipeline(r.Context(), response); err != nil {
+		if err := recordLocalStudyPipeline(r.Context(), &response); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}

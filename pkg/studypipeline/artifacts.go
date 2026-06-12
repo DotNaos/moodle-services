@@ -92,6 +92,14 @@ func ArtifactRootFromEnv() string {
 	return DefaultArtifactRoot
 }
 
+func CourseArtifactRoot(root string, courseID string) string {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		root = ArtifactRootFromEnv()
+	}
+	return courseDir(root, courseID)
+}
+
 func RunStage(courseID string, resources []moodle.Resource, stage string, options RunOptions) (contract.StudyPipelineResponse, error) {
 	stage = strings.TrimSpace(stage)
 	if stage == "" {
@@ -109,13 +117,13 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 	switch stage {
 	case "inventory":
 		inventory := BuildInventory(courseID, resources, now)
-		inventory.ArtifactRoot = courseDir(root, courseID)
+		inventory.ArtifactRoot = CourseArtifactRoot(root, courseID)
 		if err := writeInventory(root, courseID, inventory); err != nil {
 			return contract.StudyPipelineResponse{}, err
 		}
 	case "raw":
 		inventory := BuildInventory(courseID, resources, now)
-		inventory.ArtifactRoot = courseDir(root, courseID)
+		inventory.ArtifactRoot = CourseArtifactRoot(root, courseID)
 		if err := writeInventory(root, courseID, inventory); err != nil {
 			return contract.StudyPipelineResponse{}, err
 		}
@@ -153,7 +161,7 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 
 	response := Build(courseID, resources, stage+"-ready", now)
 	response.Stage = stage
-	response.ArtifactRoot = courseDir(root, courseID)
+	response.ArtifactRoot = CourseArtifactRoot(root, courseID)
 	return response, nil
 }
 
@@ -184,7 +192,7 @@ func Status(courseID string, resources []moodle.Resource, options RunOptions) co
 	}
 	response := Build(courseID, resources, status, now)
 	response.Stage = stage
-	response.ArtifactRoot = courseDir(root, courseID)
+	response.ArtifactRoot = CourseArtifactRoot(root, courseID)
 	return response
 }
 

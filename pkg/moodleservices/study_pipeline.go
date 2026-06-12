@@ -7,9 +7,9 @@ import (
 	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 )
 
-func RecordStudyPipelineResponse(ctx context.Context, st *Store, userID string, response contract.StudyPipelineResponse) error {
+func RecordStudyPipelineResponse(ctx context.Context, st *Store, userID string, response contract.StudyPipelineResponse) (StudyPipelineRunRecord, error) {
 	if st == nil || strings.TrimSpace(userID) == "" {
-		return nil
+		return StudyPipelineRunRecord{}, nil
 	}
 	materials := make([]StudyPipelineMaterialRecord, 0, len(response.Materials))
 	for _, material := range response.Materials {
@@ -35,7 +35,7 @@ func RecordStudyPipelineResponse(ctx context.Context, st *Store, userID string, 
 		}
 		links = append(links, record)
 	}
-	return st.RecordStudyPipeline(ctx, StudyPipelineRecordInput{
+	run, err := st.RecordStudyPipeline(ctx, StudyPipelineRecordInput{
 		UserID:       userID,
 		CourseID:     response.CourseID,
 		Stage:        response.Stage,
@@ -44,4 +44,8 @@ func RecordStudyPipelineResponse(ctx context.Context, st *Store, userID string, 
 		Materials:    materials,
 		TaskLinks:    links,
 	})
+	if err != nil {
+		return StudyPipelineRunRecord{}, err
+	}
+	return run, nil
 }
