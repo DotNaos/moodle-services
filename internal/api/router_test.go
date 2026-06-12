@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/DotNaos/moodle-services/internal/moodle"
+	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 	"github.com/DotNaos/moodle-services/pkg/studypipeline"
 )
 
@@ -82,6 +83,84 @@ func TestStudyPipelineHandlerBuildsCoursePlan(t *testing.T) {
 	}
 	if payload.Status != "curated-ready" || payload.Summary.Tasks != 1 || payload.Summary.LinkedSolutions != 1 {
 		t.Fatalf("unexpected payload: %#v", payload)
+	}
+}
+
+func TestStudyPipelineInventoryRouteBuildsTaskGroups(t *testing.T) {
+	t.Setenv(studypipeline.EnvArtifactRoot, t.TempDir())
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{
+				resources: map[string][]moodle.Resource{
+					"22584": {
+						{ID: "1", Name: "Teil 01 Memory Hierarchy", FileType: "pdf", SectionID: "s1"},
+						{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+						{ID: "3", Name: "Lösung Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+						{ID: "4", Name: "Modulbeschreibung", FileType: "pdf", SectionID: "s0"},
+					},
+				},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/courses/22584/study-pipeline/inventory", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var payload contract.CourseInventoryResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Summary.TaskGroups != 1 || payload.Summary.PairedTaskGroups != 1 || payload.Summary.References != 1 {
+		t.Fatalf("unexpected inventory summary: %#v", payload.Summary)
+	}
+	if len(payload.TaskGroups) != 1 || payload.TaskGroups[0].Solution == nil || payload.TaskGroups[0].Solution.ID != "3" {
+		t.Fatalf("unexpected task group: %#v", payload.TaskGroups)
+	}
+}
+
+func TestStudyPipelineExtractedDocumentsRouteBuildsStructure(t *testing.T) {
+	t.Setenv(studypipeline.EnvArtifactRoot, t.TempDir())
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{
+				resources: map[string][]moodle.Resource{
+					"22584": {
+						{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+					},
+				},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/courses/22584/study-pipeline/extracted-documents", nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var payload contract.ExtractedDocumentsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Summary.TotalDocuments != 1 || payload.Summary.TotalPages != 1 || payload.Summary.TotalBlocks == 0 {
+		t.Fatalf("unexpected extracted summary: %#v", payload.Summary)
+	}
+	if len(payload.Documents) != 1 || len(payload.Documents[0].Pages) != 1 {
+		t.Fatalf("unexpected documents: %#v", payload.Documents)
+	}
+	if payload.Documents[0].Pages[0].Blocks[0].Type != "heading" {
+		t.Fatalf("expected placeholder heading block, got %#v", payload.Documents[0].Pages[0].Blocks)
 	}
 }
 

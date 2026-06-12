@@ -107,7 +107,18 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 	}
 
 	switch stage {
+	case "inventory":
+		inventory := BuildInventory(courseID, resources, now)
+		inventory.ArtifactRoot = courseDir(root, courseID)
+		if err := writeInventory(root, courseID, inventory); err != nil {
+			return contract.StudyPipelineResponse{}, err
+		}
 	case "raw":
+		inventory := BuildInventory(courseID, resources, now)
+		inventory.ArtifactRoot = courseDir(root, courseID)
+		if err := writeInventory(root, courseID, inventory); err != nil {
+			return contract.StudyPipelineResponse{}, err
+		}
 		if err := writeRaw(root, courseID, resources, options.Downloader); err != nil {
 			return contract.StudyPipelineResponse{}, err
 		}
@@ -118,12 +129,18 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 		if err := writeExtracted(root, courseID, resources, options.Downloader); err != nil {
 			return contract.StudyPipelineResponse{}, err
 		}
+		if _, err := writeExtractedDocumentRun(root, courseID, resources, now); err != nil {
+			return contract.StudyPipelineResponse{}, err
+		}
 	case "curated":
 		if !hasExtractedArtifacts(root, courseID) {
 			if err := writeRaw(root, courseID, resources, options.Downloader); err != nil {
 				return contract.StudyPipelineResponse{}, err
 			}
 			if err := writeExtracted(root, courseID, resources, options.Downloader); err != nil {
+				return contract.StudyPipelineResponse{}, err
+			}
+			if _, err := writeExtractedDocumentRun(root, courseID, resources, now); err != nil {
 				return contract.StudyPipelineResponse{}, err
 			}
 		}
@@ -161,6 +178,9 @@ func Status(courseID string, resources []moodle.Resource, options RunOptions) co
 	case fileExists(filepath.Join(courseDir(root, courseID), "raw", "resources.json")):
 		stage = "raw"
 		status = "raw-ready"
+	case fileExists(filepath.Join(courseDir(root, courseID), "inventory", "course-inventory.json")):
+		stage = "inventory"
+		status = "inventory-ready"
 	}
 	response := Build(courseID, resources, status, now)
 	response.Stage = stage

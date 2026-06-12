@@ -2,6 +2,7 @@ package studypipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,6 +66,145 @@ func TestBuildRecognizesCourseSpecificTaskNames(t *testing.T) {
 	}
 	if payload.Summary.Other != 2 {
 		t.Fatalf("expected criteria/template to stay non-task, got summary %#v", payload.Summary)
+	}
+}
+
+func TestBuildDoesNotPairNeighborSolutionBySectionWhenTaskHasNumber(t *testing.T) {
+	payload := Build("22584", []moodle.Resource{
+		{ID: "9", Name: "Aufgabenblatt 09", FileType: "pdf", SectionID: "s4", SectionName: "Nachrichtengekoppelte Systeme"},
+		{ID: "10", Name: "Aufgabenblatt 10", FileType: "pdf", SectionID: "s4", SectionName: "Nachrichtengekoppelte Systeme"},
+		{ID: "10s", Name: "Aufgabenblatt 10 -- Lösung", FileType: "pdf", SectionID: "s4", SectionName: "Nachrichtengekoppelte Systeme"},
+	}, "", time.Unix(0, 0))
+
+	if payload.Summary.LinkedSolutions != 1 || payload.Summary.MissingSolutions != 1 {
+		t.Fatalf("unexpected solution summary: %#v", payload.Summary)
+	}
+	for _, link := range payload.TaskLinks {
+		if link.Task.ID == "9" && link.Solution != nil {
+			t.Fatalf("task 9 should not receive task 10 solution: %#v", link)
+		}
+		if link.Task.ID == "10" && (link.Solution == nil || link.Solution.ID != "10s") {
+			t.Fatalf("task 10 should receive its own solution: %#v", link)
+		}
+	}
+}
+
+func TestBuildInventoryGroupsTasksSolutionsAndReferences(t *testing.T) {
+	inventory := BuildInventory("22584", []moodle.Resource{
+		{ID: "1", Name: "Teil 01 Memory Hierarchy", FileType: "pdf", SectionID: "s1", SectionName: "Woche 1"},
+		{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionID: "s1", SectionName: "Woche 1"},
+		{ID: "3", Name: "Lösung Aufgabenblatt 01", FileType: "pdf", SectionID: "s1", SectionName: "Woche 1"},
+		{ID: "4", Name: "Aufgabenblatt 09", FileType: "pdf", SectionID: "s4", SectionName: "Woche 4"},
+		{ID: "5", Name: "Aufgabenblatt 10", FileType: "pdf", SectionID: "s4", SectionName: "Woche 4"},
+		{ID: "6", Name: "Aufgabenblatt 10 -- Lösung", FileType: "pdf", SectionID: "s4", SectionName: "Woche 4"},
+		{ID: "7", Name: "Modulbeschreibung", FileType: "pdf", SectionID: "s0", SectionName: "Allgemein"},
+		{ID: "8", Name: "Forum Fragen", Type: "forum", SectionID: "s0", SectionName: "Allgemein"},
+		{ID: "9", Name: "Externes Werkzeug", Type: "url", SectionID: "s0", SectionName: "Allgemein"},
+	}, time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC))
+
+	if inventory.CourseID != "22584" || inventory.GeneratedAt != "2026-06-12T10:00:00Z" {
+		t.Fatalf("unexpected inventory identity: %#v", inventory)
+	}
+	if inventory.Summary.TotalResources != 9 || inventory.Summary.LectureMaterial != 1 || inventory.Summary.TaskGroups != 3 {
+		t.Fatalf("unexpected summary: %#v", inventory.Summary)
+	}
+	if inventory.Summary.PairedTaskGroups != 2 || inventory.Summary.MissingSolutionGroups != 1 || inventory.Summary.AmbiguousTaskGroups != 0 {
+		t.Fatalf("unexpected pairing summary: %#v", inventory.Summary)
+	}
+	if inventory.Summary.References != 1 || inventory.Summary.Interactions != 1 || inventory.Summary.Unknown != 1 {
+		t.Fatalf("unexpected non-task summary: %#v", inventory.Summary)
+	}
+
+	if len(inventory.TaskGroups) != 3 {
+		t.Fatalf("expected three task groups, got %d", len(inventory.TaskGroups))
+	}
+	firstGroup := inventory.TaskGroups[0]
+	if firstGroup.ID != "task-group-1" || firstGroup.PairingStatus != "paired" {
+		t.Fatalf("unexpected first group: %#v", firstGroup)
+	}
+	if firstGroup.Solution == nil || firstGroup.Solution.ID != "3" {
+		t.Fatalf("expected first group to link solution 3, got %#v", firstGroup)
+	}
+	secondGroup := inventory.TaskGroups[1]
+	if secondGroup.ID != "task-group-9" || secondGroup.PairingStatus != "missing_solution" {
+		t.Fatalf("unexpected second group: %#v", secondGroup)
+	}
+	thirdGroup := inventory.TaskGroups[2]
+	if thirdGroup.ID != "task-group-10" || thirdGroup.Solution == nil || thirdGroup.Solution.ID != "6" {
+		t.Fatalf("expected task 10 to link its own solution, got %#v", thirdGroup)
+	}
+	if len(inventory.Unknown) != 1 || inventory.Unknown[0].ID != "9" {
+		t.Fatalf("expected unknown resource 7 to be preserved, got %#v", inventory.Unknown)
+	}
+}
+
+func TestLoadInventoryPersistsCourseInventory(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	_, err := LoadInventory(courseID, []moodle.Resource{
+		{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+		{ID: "3", Name: "Lösung Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+	}, RunOptions{
+		Root: root,
+		Now:  time.Unix(0, 0),
+	})
+	if err != nil {
+		t.Fatalf("LoadInventory: %v", err)
+	}
+
+	path := filepath.Join(root, "courses", courseID, "inventory", "course-inventory.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read inventory: %v", err)
+	}
+	var persisted contract.CourseInventoryResponse
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		t.Fatalf("decode inventory: %v", err)
+	}
+	if persisted.Summary.PairedTaskGroups != 1 || persisted.TaskGroups[0].Solution == nil {
+		t.Fatalf("unexpected persisted inventory: %#v", persisted)
+	}
+}
+
+func TestLoadExtractedDocumentsBuildsRenderableStructure(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	resources := []moodle.Resource{
+		{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionName: "Einführung"},
+	}
+	writeExtractedFixture(t, root, courseID, "tasks", "2-Aufgabenblatt 01", strings.Join([]string{
+		"# Aufgabe 1",
+		"",
+		"- Teil A",
+		"- Teil B",
+		"",
+		"E = mc^2",
+	}, "\n"))
+
+	response, err := LoadExtractedDocuments(courseID, resources, RunOptions{
+		Root: root,
+		Now:  time.Date(2026, 6, 12, 10, 30, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("LoadExtractedDocuments: %v", err)
+	}
+	if response.RunID != "baseline-20260612T103000Z" || response.Engine == "" {
+		t.Fatalf("unexpected run metadata: %#v", response)
+	}
+	if response.Summary.TotalDocuments != 1 || response.Summary.TotalPages != 1 || response.Summary.TotalBlocks != 3 {
+		t.Fatalf("unexpected summary: %#v", response.Summary)
+	}
+	document := response.Documents[0]
+	if document.Resource.ID != "2" || document.Status != "machine-extracted" {
+		t.Fatalf("unexpected document: %#v", document)
+	}
+	blocks := document.Pages[0].Blocks
+	if blocks[0].Type != "heading" || blocks[1].Type != "list" || blocks[2].Type != "formula" {
+		t.Fatalf("unexpected blocks: %#v", blocks)
+	}
+	latestPath := filepath.Join(root, "courses", courseID, "extracted", "latest-documents.json")
+	if _, err := os.Stat(latestPath); err != nil {
+		t.Fatalf("expected latest document structure to be written: %v", err)
 	}
 }
 

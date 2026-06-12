@@ -95,6 +95,28 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			return
 		}
 		svc.WriteJSON(w, http.StatusOK, response)
+	case "inventory":
+		if r.Method != http.MethodGet {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		inventory, err := studypipeline.LoadInventory(courseID, materials, options)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, inventory)
+	case "extracted-documents":
+		if r.Method != http.MethodGet {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		documents, err := studypipeline.LoadExtractedDocuments(courseID, materials, options)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, documents)
 	case "script":
 		script, err := studypipeline.LoadScript(courseID, materials, options)
 		if err != nil {

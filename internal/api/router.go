@@ -75,6 +75,8 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Post("/api/courses/{courseID}/study-pipeline", studyPipelineStageRoute(opts, "curated"))
 	router.Post("/api/courses/{courseID}/study-pipeline/{stage}", studyPipelineStageRoute(opts, ""))
 	router.Get("/api/courses/{courseID}/study-pipeline/status", studyPipelineStatusRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/inventory", studyPipelineInventoryRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/extracted-documents", studyPipelineExtractedDocumentsRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/script", studyPipelineScriptRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/task-view", studyPipelineTaskViewRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/refine", studyPipelineRefineRoute(opts))
@@ -219,6 +221,14 @@ func studyPipelineStageRoute(opts ServerOptions, fallbackStage string) http.Hand
 
 func studyPipelineScriptRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineReadRoute(opts, "script")
+}
+
+func studyPipelineInventoryRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineReadRoute(opts, "inventory")
+}
+
+func studyPipelineExtractedDocumentsRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineReadRoute(opts, "extracted-documents")
 }
 
 func studyPipelineTaskViewRoute(opts ServerOptions) http.HandlerFunc {
@@ -387,6 +397,20 @@ func studyPipelineReadHandler(opts ServerOptions, action string) http.HandlerFun
 		}
 		options := studypipeline.RunOptions{Downloader: downloader, Now: time.Now()}
 		switch action {
+		case "inventory":
+			inventory, err := studypipeline.LoadInventory(courseID, resources, options)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, inventory)
+		case "extracted-documents":
+			documents, err := studypipeline.LoadExtractedDocuments(courseID, resources, options)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, documents)
 		case "script":
 			script, err := studypipeline.LoadScript(courseID, resources, options)
 			if err != nil {
