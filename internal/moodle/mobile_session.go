@@ -130,6 +130,9 @@ func (c *MobileClient) FetchCourses() ([]Course, error) {
 		if courseImage == "" || isMoodleGeneratedCourseSVG(courseImage) {
 			courseImage = timelineImages[course.ID]
 		}
+		if isMoodleGeneratedCourseSVG(courseImage) {
+			courseImage = ""
+		}
 		result = append(result, Course{
 			ID:         course.ID,
 			Fullname:   DisplayCourseName(course.FullName, c.School.CourseNamePatterns),
@@ -352,7 +355,7 @@ func mobileCourseImagesByID(courses []MobileCourse, token string) map[int]string
 	images := map[int]string{}
 	for _, course := range courses {
 		image := mobileCourseImage(course, token)
-		if image != "" {
+		if image != "" && !isMoodleGeneratedCourseSVG(image) {
 			images[course.ID] = image
 		}
 	}
@@ -374,7 +377,7 @@ func (c *MobileClient) fillMissingCourseImagesFromCourseDetails(courses []Mobile
 			continue
 		}
 		image = mobileCourseImage(detail, c.Session.Token)
-		if image != "" {
+		if image != "" && !isMoodleGeneratedCourseSVG(image) {
 			images[course.ID] = image
 		}
 	}
@@ -391,7 +394,8 @@ func hasMissingMobileCourseImages(courses []MobileCourse) bool {
 }
 
 func isMoodleGeneratedCourseSVG(image string) bool {
-	return strings.Contains(strings.ToLower(strings.TrimSpace(image)), "/course/generated/course.svg")
+	value := strings.ToLower(strings.TrimSpace(image))
+	return strings.HasPrefix(value, "data:image/svg+xml") || strings.Contains(value, "/course/generated/course.svg")
 }
 
 func addMobileTokenToFileURL(fileURL string, token string) string {
