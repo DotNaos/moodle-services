@@ -141,7 +141,7 @@ func bestSolution(task contract.StudyPipelineMaterial, solutions []contract.Stud
 			continue
 		}
 		sameSection := solution.SectionID != "" && solution.SectionID == task.SectionID
-		if fallback == nil && sameSection {
+		if taskKey == "" && fallback == nil && sameSection {
 			fallback = solution
 		}
 		if taskKey != "" && taskKey == firstNumber(solution.Name) {

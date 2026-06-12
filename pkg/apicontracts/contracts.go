@@ -149,6 +149,131 @@ type StudyPipelineTaskLink struct {
 	Status   string                 `json:"status"`
 }
 
+type CourseInventoryResponse struct {
+	CourseID        string                     `json:"courseId"`
+	GeneratedAt     string                     `json:"generatedAt"`
+	ArtifactRoot    string                     `json:"artifactRoot,omitempty"`
+	Summary         CourseInventorySummary     `json:"summary"`
+	LectureMaterial []CourseInventoryNode      `json:"lectureMaterial"`
+	TaskGroups      []CourseInventoryTaskGroup `json:"taskGroups"`
+	References      []CourseInventoryNode      `json:"references"`
+	Interactions    []CourseInventoryNode      `json:"interactions"`
+	Unknown         []CourseInventoryNode      `json:"unknown"`
+}
+
+type CourseInventorySummary struct {
+	TotalResources        int `json:"totalResources"`
+	LectureMaterial       int `json:"lectureMaterial"`
+	TaskGroups            int `json:"taskGroups"`
+	PairedTaskGroups      int `json:"pairedTaskGroups"`
+	MissingSolutionGroups int `json:"missingSolutionGroups"`
+	AmbiguousTaskGroups   int `json:"ambiguousTaskGroups"`
+	References            int `json:"references"`
+	Interactions          int `json:"interactions"`
+	Unknown               int `json:"unknown"`
+}
+
+type CourseInventoryNode struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	URL          string `json:"url,omitempty"`
+	Type         string `json:"type"`
+	ResourceType string `json:"resourceType,omitempty"`
+	FileType     string `json:"fileType,omitempty"`
+	SectionID    string `json:"sectionId,omitempty"`
+	SectionName  string `json:"sectionName,omitempty"`
+	Bucket       string `json:"bucket"`
+	Role         string `json:"role"`
+	Reason       string `json:"reason"`
+	Confidence   string `json:"confidence"`
+}
+
+type CourseInventoryTaskGroup struct {
+	ID                 string                `json:"id"`
+	Title              string                `json:"title"`
+	Sheet              CourseInventoryNode   `json:"sheet"`
+	Solution           *CourseInventoryNode  `json:"solution,omitempty"`
+	SolutionCandidates []CourseInventoryNode `json:"solutionCandidates,omitempty"`
+	PairingStatus      string                `json:"pairingStatus"`
+	PairingReason      string                `json:"pairingReason"`
+	PairingConfidence  string                `json:"pairingConfidence"`
+}
+
+type ExtractedDocumentsResponse struct {
+	CourseID     string                       `json:"courseId"`
+	RunID        string                       `json:"runId"`
+	GeneratedAt  string                       `json:"generatedAt"`
+	Engine       string                       `json:"engine"`
+	ArtifactRoot string                       `json:"artifactRoot,omitempty"`
+	Summary      ExtractedDocumentsSummary    `json:"summary"`
+	Documents    []PDFDocument                `json:"documents"`
+	Diagnostics  ExtractedDocumentDiagnostics `json:"diagnostics"`
+}
+
+type ExtractedDocumentsSummary struct {
+	TotalDocuments      int `json:"totalDocuments"`
+	TotalPages          int `json:"totalPages"`
+	TotalBlocks         int `json:"totalBlocks"`
+	PagePreviewAssets   int `json:"pagePreviewAssets"`
+	EmbeddedImageAssets int `json:"embeddedImageAssets"`
+	PagesMissingText    int `json:"pagesMissingText"`
+	VisualOnlyPages     int `json:"visualOnlyPages"`
+	UnknownBlocks       int `json:"unknownBlocks"`
+}
+
+type PDFDocument struct {
+	ID            string                       `json:"id"`
+	Resource      StudyPipelineMaterial        `json:"resource"`
+	RunID         string                       `json:"runId"`
+	Engine        string                       `json:"engine"`
+	Status        string                       `json:"status"`
+	SourcePath    string                       `json:"sourcePath,omitempty"`
+	ExtractedPath string                       `json:"extractedPath,omitempty"`
+	Pages         []PDFPage                    `json:"pages"`
+	Assets        []DocumentAsset              `json:"assets,omitempty"`
+	Diagnostics   ExtractedDocumentDiagnostics `json:"diagnostics"`
+}
+
+type PDFPage struct {
+	ID             string                       `json:"id"`
+	PageNumber     int                          `json:"pageNumber"`
+	Text           string                       `json:"text,omitempty"`
+	Markdown       string                       `json:"markdown,omitempty"`
+	PreviewAssetID string                       `json:"previewAssetId,omitempty"`
+	Blocks         []DocumentBlock              `json:"blocks"`
+	Diagnostics    ExtractedDocumentDiagnostics `json:"diagnostics"`
+}
+
+type DocumentBlock struct {
+	ID         string `json:"id"`
+	PageNumber int    `json:"pageNumber"`
+	Type       string `json:"type"`
+	Label      string `json:"label"`
+	Text       string `json:"text,omitempty"`
+	Markdown   string `json:"markdown,omitempty"`
+	AssetID    string `json:"assetId,omitempty"`
+	Source     string `json:"source"`
+	Confidence string `json:"confidence"`
+}
+
+type DocumentAsset struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	Path       string `json:"path"`
+	PageNumber int    `json:"pageNumber,omitempty"`
+	MimeType   string `json:"mimeType,omitempty"`
+	Role       string `json:"role,omitempty"`
+}
+
+type ExtractedDocumentDiagnostics struct {
+	PagesMissingText     []int    `json:"pagesMissingText,omitempty"`
+	VisualOnlyPages      []int    `json:"visualOnlyPages,omitempty"`
+	ExtractedImageAssets int      `json:"extractedImageAssets,omitempty"`
+	UnusedImageAssets    []string `json:"unusedImageAssets,omitempty"`
+	UnknownBlocks        []string `json:"unknownBlocks,omitempty"`
+	Warnings             []string `json:"warnings,omitempty"`
+}
+
 type StudyPipelineTaskViewResponse struct {
 	CourseID       string                    `json:"courseId"`
 	GeneratedAt    string                    `json:"generatedAt"`
