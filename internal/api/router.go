@@ -12,6 +12,7 @@ import (
 	"time"
 
 	serverless "github.com/DotNaos/moodle-services/api"
+	"github.com/DotNaos/moodle-services/internal/auth"
 	"github.com/DotNaos/moodle-services/internal/moodle"
 	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 	"github.com/DotNaos/moodle-services/pkg/studypipeline"
@@ -187,6 +188,9 @@ func studyPipelineStatusRoute(opts ServerOptions) http.HandlerFunc {
 			webHandler(w, r)
 			return
 		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
 		localHandler(w, r)
 	}
 }
@@ -204,6 +208,9 @@ func studyPipelineStageRoute(opts ServerOptions, fallbackStage string) http.Hand
 	return func(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
 			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
 			return
 		}
 		localHandler(w, r)
@@ -231,6 +238,9 @@ func studyPipelineRefineRoute(opts ServerOptions) http.HandlerFunc {
 			webHandler(w, r)
 			return
 		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
 		localHandler(w, r)
 	}
 }
@@ -247,6 +257,9 @@ func studyPipelineChatRoute(opts ServerOptions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
 			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
 			return
 		}
 		localHandler(w, r)
@@ -267,6 +280,9 @@ func studyPipelineAttemptRoute(opts ServerOptions) http.HandlerFunc {
 			webHandler(w, r)
 			return
 		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
 		localHandler(w, r)
 	}
 }
@@ -285,6 +301,9 @@ func studyPipelineTaskStatusRoute(opts ServerOptions) http.HandlerFunc {
 			webHandler(w, r)
 			return
 		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
 		localHandler(w, r)
 	}
 }
@@ -300,6 +319,9 @@ func studyPipelineReadRoute(opts ServerOptions, action string) http.HandlerFunc 
 	return func(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
 			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
 			return
 		}
 		localHandler(w, r)
@@ -543,6 +565,9 @@ func studyRefineErrorMessage(err error) string {
 }
 
 func studyPipelineContext(w http.ResponseWriter, r *http.Request, opts ServerOptions) (string, []moodle.Resource, studypipeline.Downloader, bool) {
+	if rejectHostedAnonymous(w, r) {
+		return "", nil, nil, false
+	}
 	courseID := strings.TrimSpace(chi.URLParam(r, "courseID"))
 	if courseID == "" {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("courseID is required"))
@@ -571,6 +596,10 @@ func resolveLogWriter(writer io.Writer) io.Writer {
 
 func healthHandler(opts ServerOptions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if hostedMode() {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+			return
+		}
 		client, err := opts.ClientProvider()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
@@ -590,6 +619,10 @@ func healthHandler(opts ServerOptions) http.HandlerFunc {
 
 func coursesHandler(opts ServerOptions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if hostedMode() {
+			serverless.Courses(w, r)
+			return
+		}
 		client, err := opts.ClientProvider()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
@@ -606,6 +639,10 @@ func coursesHandler(opts ServerOptions) http.HandlerFunc {
 
 func categoriesHandler(opts ServerOptions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if hostedMode() {
+			withQuery(serverless.Courses, "route", "categories")(w, r)
+			return
+		}
 		client, err := opts.ClientProvider()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
@@ -627,6 +664,9 @@ func categoriesHandler(opts ServerOptions) http.HandlerFunc {
 
 func courseResourcesHandler(opts ServerOptions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
 		courseID := strings.TrimSpace(chi.URLParam(r, "courseID"))
 		if courseID == "" {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("courseID is required"))
@@ -645,6 +685,18 @@ func courseResourcesHandler(opts ServerOptions) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, resources)
 	}
+}
+
+func rejectHostedAnonymous(w http.ResponseWriter, r *http.Request) bool {
+	if !hostedMode() || auth.APIKeyFromRequest(r) != "" {
+		return false
+	}
+	writeError(w, http.StatusUnauthorized, auth.ErrUnauthorized)
+	return true
+}
+
+func hostedMode() bool {
+	return strings.TrimSpace(os.Getenv("DATABASE_URL")) != ""
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {

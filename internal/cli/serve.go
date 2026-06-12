@@ -48,9 +48,11 @@ var serveCmd = &cobra.Command{
 		if err := emitServeStatus(cmd, serveEvent{Type: "starting", Addr: serveAddr}); err != nil {
 			return err
 		}
-		if err := ensureServeSession(); err != nil {
-			_ = emitServeStatus(cmd, serveEvent{Type: "fatal", Addr: serveAddr, Error: err.Error()})
-			return markErrorEmitted(err)
+		if strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
+			if err := ensureServeSession(); err != nil {
+				_ = emitServeStatus(cmd, serveEvent{Type: "fatal", Addr: serveAddr, Error: err.Error()})
+				return markErrorEmitted(err)
+			}
 		}
 
 		router, err := api.NewRouter(api.ServerOptions{
