@@ -8,9 +8,12 @@ Configure secrets in the hosting environment. Do not commit these values.
 
 ## API key mode
 
-The hosted app reads user credentials from Neon Postgres when `DATABASE_URL` is configured.
+The hosted app reads user credentials from Neon Postgres. `DATABASE_URL`,
+`APP_ENCRYPTION_KEY`, and `API_KEY_HASH_SECRET` must be configured in hosted
+environments.
 
-Run the schema in `docs/guides/chatgpt-app-schema.sql`, then insert one user row:
+Run the schema in `docs/guides/chatgpt-app-schema.sql`, then connect each user
+through the web login or insert user-specific rows for private development:
 
 - `user_id`: stable local user id, for example `oli`
 - `api_key_hash`: SHA-256 hex digest of the generated API key
@@ -25,32 +28,16 @@ https://moodle-services.vercel.app/api/mcp?key=<generated-api-key>
 
 This query-string API key is an interim private setup so ChatGPT Developer Mode can connect without custom request headers. Replace it with OAuth before broader sharing.
 
-## Temporary global-session guard
+## No global Moodle session fallback
 
-If `DATABASE_URL` is not configured yet, set `MCP_API_KEY_HASH` to the SHA-256 hex digest of the generated API key. The app will still use legacy environment credentials, but it will reject requests without the API key.
-
-## Legacy environment mode
-
-If `DATABASE_URL` is not configured, the app falls back to legacy global environment credentials.
-
-Preferred Moodle auth:
-
-- `MOODLE_MOBILE_SESSION_JSON`: JSON from `~/.moodle/mobile-session.json`
-
-Alternative Moodle auth:
-
-- `MOODLE_MOBILE_TOKEN`
-- `MOODLE_SITE_URL`
-- `MOODLE_USER_ID`
-- `MOODLE_SCHOOL_ID` optional
+Hosted API requests must never use a global Moodle account from environment
+variables. If `DATABASE_URL` is missing, request-backed APIs fail instead of
+falling back to `MOODLE_MOBILE_SESSION_JSON`, `MOODLE_MOBILE_TOKEN`, or
+`MOODLE_SESSION_JSON`.
 
 Calendar:
 
 - `MOODLE_CALENDAR_URL`: school ICS subscription URL
-
-Cookie-session fallback:
-
-- `MOODLE_SESSION_JSON`: JSON from `~/.moodle/session.json`
 
 ## ChatGPT setup
 

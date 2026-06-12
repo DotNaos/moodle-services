@@ -8,17 +8,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/DotNaos/moodle-services/pkg/chatgptapp"
 )
 
 const (
 	EnvDatabaseURL          = "DATABASE_URL"
 	EnvEncryptionKey        = "APP_ENCRYPTION_KEY"
 	EnvAPIKeyHashSecret     = "API_KEY_HASH_SECRET"
-	EnvLegacyAPIKeyHash     = "MCP_API_KEY_HASH"
 	EnvCalendarURL          = "MOODLE_CALENDAR_URL"
-	EnvMobileSessionJSON    = "MOODLE_MOBILE_SESSION_JSON"
 	EnvCodexStateQuota      = "CODEX_STATE_USER_QUOTA_BYTES"
 	EnvCodexStateAdminQuota = "CODEX_STATE_ADMIN_QUOTA_BYTES"
 	EnvAdminClerkUsers      = "MOODLE_ADMIN_CLERK_USER_IDS"
@@ -28,6 +24,8 @@ const OAuthAccessTokenPrefix = "moodle_oauth_"
 const DefaultCodexStateUserQuotaBytes int64 = 512 * 1024 * 1024
 const DefaultCodexStateAdminQuotaBytes int64 = 1024 * 1024 * 1024
 const MaxCodexStateUserQuotaBytes int64 = 5 * 1024 * 1024 * 1024
+
+var ErrDatabaseNotConfigured = fmt.Errorf("%s is not configured", EnvDatabaseURL)
 
 type ServerEnv struct {
 	DatabaseURL               string
@@ -97,7 +95,7 @@ func (cfg ServerEnv) IsConfiguredAdminClerkUser(clerkUserID string) bool {
 
 func OpenStoreFromEnv(cfg ServerEnv) (*Store, error) {
 	if cfg.DatabaseURL == "" {
-		return nil, fmt.Errorf("%s is not configured", EnvDatabaseURL)
+		return nil, ErrDatabaseNotConfigured
 	}
 	return OpenStore(cfg.DatabaseURL)
 }
@@ -135,16 +133,6 @@ func ServiceForRequest(r *http.Request, cfg ServerEnv) (Service, func(), error) 
 	apiKey := APIKeyFromRequest(r)
 	if apiKey == "" {
 		return Service{}, nil, ErrUnauthorized
-	}
-	if cfg.DatabaseURL == "" {
-		if expectedHash := strings.TrimSpace(os.Getenv(EnvLegacyAPIKeyHash)); expectedHash != "" && !ConstantTimeEqual(HashAPIKey(apiKey), expectedHash) {
-			return Service{}, nil, ErrUnauthorized
-		}
-		client, err := chatgptapp.ClientFromEnv()
-		if err != nil {
-			return Service{}, nil, err
-		}
-		return Service{Client: client, CalendarURL: cfg.CalendarURL}, func() {}, nil
 	}
 	st, err := OpenStoreFromEnv(cfg)
 	if err != nil {

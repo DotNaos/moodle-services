@@ -32,21 +32,11 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 func serviceFromRequest(r *http.Request, cfg chatgptapp.Config) (chatgptapp.Service, string, int, error) {
 	apiKey := chatgptapp.APIKeyFromRequest(r)
-	if cfg.DatabaseURL == "" {
-		if cfg.APIKeyHash != "" {
-			if apiKey == "" || !chatgptapp.ConstantTimeEqual(chatgptapp.HashAPIKey(apiKey), cfg.APIKeyHash) {
-				return chatgptapp.Service{}, "", http.StatusUnauthorized, chatgptapp.ErrUnauthorized
-			}
-		}
-		client, err := chatgptapp.ClientFromEnv()
-		if err != nil {
-			return chatgptapp.Service{}, "", http.StatusInternalServerError, err
-		}
-		return chatgptapp.Service{Client: client, CalendarURL: cfg.CalendarURL}, apiKey, http.StatusOK, nil
-	}
-
 	if apiKey == "" {
 		return chatgptapp.Service{}, "", http.StatusUnauthorized, chatgptapp.ErrUnauthorized
+	}
+	if cfg.DatabaseURL == "" {
+		return chatgptapp.Service{}, "", http.StatusInternalServerError, svc.ErrDatabaseNotConfigured
 	}
 
 	if strings.TrimSpace(os.Getenv("APP_ENCRYPTION_KEY")) != "" {
