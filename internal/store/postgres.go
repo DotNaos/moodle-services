@@ -72,7 +72,24 @@ func Open(databaseURL string) (*Store, error) {
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(0)
 	db.SetConnMaxLifetime(2 * time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := ensureCompatibilitySchema(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
+}
+
+func ensureCompatibilitySchema(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
+		alter table moodle_accounts
+		  add column if not exists encrypted_webex_session_json text,
+		  add column if not exists webex_session_updated_at timestamptz,
+		  add column if not exists encrypted_webex_credentials text,
+		  add column if not exists webex_credentials_updated_at timestamptz
+	`)
+	return err
 }
 
 func (s *Store) Close() error {
