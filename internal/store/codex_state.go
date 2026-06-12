@@ -107,21 +107,26 @@ func (s *Store) CreateCodexStateSnapshot(ctx context.Context, input CreateCodexS
 	return snapshot, nil
 }
 
-func (s *Store) EffectiveCodexStateQuotaBytes(ctx context.Context, userID string, defaultQuotaBytes int64) (int64, error) {
+func (s *Store) EffectiveCodexStateQuotaBytes(ctx context.Context, userID string, defaultQuotaBytes int64, adminQuotaBytes int64) (int64, error) {
 	var override sql.NullInt64
+	var isAdmin bool
 	err := s.db.QueryRowContext(ctx, `
-		select codex_state_quota_bytes
+		select codex_state_quota_bytes, is_admin
 		from users
 		where id = $1
-	`, userID).Scan(&override)
+	`, userID).Scan(&override, &isAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, ErrNotFound
 	}
 	if err != nil {
 		return 0, err
 	}
+	// Explicit per-user override wins; admins otherwise get the admin default.
 	if override.Valid && override.Int64 > 0 {
 		return override.Int64, nil
+	}
+	if isAdmin && adminQuotaBytes > 0 {
+		return adminQuotaBytes, nil
 	}
 	return defaultQuotaBytes, nil
 }

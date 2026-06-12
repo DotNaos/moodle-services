@@ -35,7 +35,10 @@ type Service struct {
 	Client           DataClient
 	CalendarURL      string
 	WebexSessionJSON string
-	Now              func() time.Time
+	// WebexCredentialsJSON is the decrypted {"username","password"} blob used to
+	// silently re-create an expired Webex browser session (server-side auto-renew).
+	WebexCredentialsJSON string
+	Now                  func() time.Time
 }
 
 type SearchResult struct {

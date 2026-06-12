@@ -3,6 +3,7 @@ package moodleservice
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -15,6 +16,11 @@ import (
 )
 
 const maxWebexPages = 50
+
+// ErrWebexCredentialsRequired signals that the stored Webex browser session is
+// missing or expired. Callers with stored credentials can re-create the session
+// (auto-renew) and retry; otherwise the user must sign in again.
+var ErrWebexCredentialsRequired = errors.New("Moodle web credentials are required for Webex recordings")
 
 type WebexRecording struct {
 	RecordingDate   string `json:"recordingDate"`
@@ -40,7 +46,7 @@ func (s Service) ListWebexRecordings(ctx context.Context, courseID string) ([]We
 		return nil, fmt.Errorf("courseId is required")
 	}
 	if strings.TrimSpace(s.WebexSessionJSON) == "" {
-		return nil, fmt.Errorf("Moodle web credentials are required for Webex recordings")
+		return nil, ErrWebexCredentialsRequired
 	}
 	client, ok := s.Client.(webexLTIClient)
 	if !ok {
@@ -71,7 +77,7 @@ func (s Service) ListWebexRecordings(ctx context.Context, courseID string) ([]We
 		return nil, err
 	}
 	if !isWebexApplication(page.url, page.text) {
-		return nil, fmt.Errorf("Moodle web credentials are required for Webex recordings")
+		return nil, ErrWebexCredentialsRequired
 	}
 
 	csrf := extractCSRFToken(page.text)

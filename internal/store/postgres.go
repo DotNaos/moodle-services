@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/DotNaos/moodle-services/internal/auth"
@@ -31,6 +32,7 @@ type MoodleCredentials struct {
 	EncryptedMobileSessionJSON string
 	EncryptedCalendarURL       string
 	EncryptedWebexSessionJSON  string
+	EncryptedWebexCredentials  string
 	LegacyMobileSessionJSON    string
 	LegacyCalendarURL          string
 }
@@ -47,6 +49,9 @@ type UpsertMoodleAccountInput struct {
 type UpsertWebexSessionInput struct {
 	UserID                    string
 	EncryptedWebexSessionJSON string
+	// EncryptedWebexCredentials, when non-empty, also persists the encrypted
+	// {username,password} blob used for silent session auto-renew.
+	EncryptedWebexCredentials string
 }
 
 type APIKeyRecord struct {
@@ -235,12 +240,12 @@ func (s *Store) MoodleCredentialsForAPIKey(ctx context.Context, key string, hash
 	var out MoodleCredentials
 	out.UserID = user.ID
 	err = s.db.QueryRowContext(ctx, `
-		select encrypted_mobile_session_json, coalesce(encrypted_webex_session_json, '')
+		select encrypted_mobile_session_json, coalesce(encrypted_webex_session_json, ''), coalesce(encrypted_webex_credentials, '')
 		from moodle_accounts
 		where user_id = $1
 		order by updated_at desc
 		limit 1
-	`, user.ID).Scan(&out.EncryptedMobileSessionJSON, &out.EncryptedWebexSessionJSON)
+	`, user.ID).Scan(&out.EncryptedMobileSessionJSON, &out.EncryptedWebexSessionJSON, &out.EncryptedWebexCredentials)
 	if errors.Is(err, sql.ErrNoRows) {
 		return MoodleCredentials{}, fmt.Errorf("no Moodle account is connected for this user")
 	}
@@ -251,6 +256,32 @@ func (s *Store) MoodleCredentialsForAPIKey(ctx context.Context, key string, hash
 		select encrypted_url from calendar_subscriptions where user_id = $1 order by updated_at desc limit 1
 	`, user.ID).Scan(&out.EncryptedCalendarURL)
 	return out, nil
+}
+
+func (s *Store) UpsertCalendarSubscription(ctx context.Context, userID string, encryptedURL string) error {
+	if strings.TrimSpace(userID) == "" {
+		return fmt.Errorf("user id is required")
+	}
+	if strings.TrimSpace(encryptedURL) == "" {
+		return fmt.Errorf("encrypted calendar url is required")
+	}
+	_, err := s.db.ExecContext(ctx, `
+		insert into calendar_subscriptions (user_id, encrypted_url, updated_at)
+		values ($1, $2, now())
+	`, userID, encryptedURL)
+	return err
+}
+
+func (s *Store) CalendarSubscriptionConfigured(ctx context.Context, userID string) (bool, error) {
+	var configured bool
+	err := s.db.QueryRowContext(ctx, `
+		select exists(
+			select 1
+			from calendar_subscriptions
+			where user_id = $1 and trim(encrypted_url) <> ''
+		)
+	`, userID).Scan(&configured)
+	return configured, err
 }
 
 func (s *Store) UpsertWebexSession(ctx context.Context, input UpsertWebexSessionInput) error {
@@ -265,6 +296,8 @@ func (s *Store) UpsertWebexSession(ctx context.Context, input UpsertWebexSession
 		set
 			encrypted_webex_session_json = $2,
 			webex_session_updated_at = now(),
+			encrypted_webex_credentials = case when $3 <> '' then $3 else encrypted_webex_credentials end,
+			webex_credentials_updated_at = case when $3 <> '' then now() else webex_credentials_updated_at end,
 			updated_at = now()
 		where id = (
 			select id
@@ -273,7 +306,7 @@ func (s *Store) UpsertWebexSession(ctx context.Context, input UpsertWebexSession
 			order by updated_at desc
 			limit 1
 		)
-	`, input.UserID, input.EncryptedWebexSessionJSON)
+	`, input.UserID, input.EncryptedWebexSessionJSON, input.EncryptedWebexCredentials)
 	if err != nil {
 		return err
 	}

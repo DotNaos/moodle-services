@@ -13,27 +13,30 @@ import (
 )
 
 const (
-	EnvDatabaseURL       = "DATABASE_URL"
-	EnvEncryptionKey     = "APP_ENCRYPTION_KEY"
-	EnvAPIKeyHashSecret  = "API_KEY_HASH_SECRET"
-	EnvLegacyAPIKeyHash  = "MCP_API_KEY_HASH"
-	EnvCalendarURL       = "MOODLE_CALENDAR_URL"
-	EnvMobileSessionJSON = "MOODLE_MOBILE_SESSION_JSON"
-	EnvCodexStateQuota   = "CODEX_STATE_USER_QUOTA_BYTES"
-	EnvAdminClerkUsers   = "MOODLE_ADMIN_CLERK_USER_IDS"
+	EnvDatabaseURL          = "DATABASE_URL"
+	EnvEncryptionKey        = "APP_ENCRYPTION_KEY"
+	EnvAPIKeyHashSecret     = "API_KEY_HASH_SECRET"
+	EnvLegacyAPIKeyHash     = "MCP_API_KEY_HASH"
+	EnvCalendarURL          = "MOODLE_CALENDAR_URL"
+	EnvMobileSessionJSON    = "MOODLE_MOBILE_SESSION_JSON"
+	EnvCodexStateQuota      = "CODEX_STATE_USER_QUOTA_BYTES"
+	EnvCodexStateAdminQuota = "CODEX_STATE_ADMIN_QUOTA_BYTES"
+	EnvAdminClerkUsers      = "MOODLE_ADMIN_CLERK_USER_IDS"
 )
 
 const OAuthAccessTokenPrefix = "moodle_oauth_"
-const DefaultCodexStateUserQuotaBytes int64 = 128 * 1024 * 1024
+const DefaultCodexStateUserQuotaBytes int64 = 512 * 1024 * 1024
+const DefaultCodexStateAdminQuotaBytes int64 = 1024 * 1024 * 1024
 const MaxCodexStateUserQuotaBytes int64 = 5 * 1024 * 1024 * 1024
 
 type ServerEnv struct {
-	DatabaseURL              string
-	EncryptionKey            string
-	HashSecret               []byte
-	CalendarURL              string
-	CodexStateUserQuotaBytes int64
-	AdminClerkUserIDs        map[string]bool
+	DatabaseURL               string
+	EncryptionKey             string
+	HashSecret                []byte
+	CalendarURL               string
+	CodexStateUserQuotaBytes  int64
+	CodexStateAdminQuotaBytes int64
+	AdminClerkUserIDs         map[string]bool
 }
 
 func LoadServerEnv() ServerEnv {
@@ -43,12 +46,13 @@ func LoadServerEnv() ServerEnv {
 		hashSecret = encryptionKey
 	}
 	return ServerEnv{
-		DatabaseURL:              strings.TrimSpace(os.Getenv(EnvDatabaseURL)),
-		EncryptionKey:            encryptionKey,
-		HashSecret:               []byte(hashSecret),
-		CalendarURL:              strings.TrimSpace(os.Getenv(EnvCalendarURL)),
-		CodexStateUserQuotaBytes: parsePositiveInt64Env(EnvCodexStateQuota, DefaultCodexStateUserQuotaBytes),
-		AdminClerkUserIDs:        parseCSVSetEnv(EnvAdminClerkUsers),
+		DatabaseURL:               strings.TrimSpace(os.Getenv(EnvDatabaseURL)),
+		EncryptionKey:             encryptionKey,
+		HashSecret:                []byte(hashSecret),
+		CalendarURL:               strings.TrimSpace(os.Getenv(EnvCalendarURL)),
+		CodexStateUserQuotaBytes:  parsePositiveInt64Env(EnvCodexStateQuota, DefaultCodexStateUserQuotaBytes),
+		CodexStateAdminQuotaBytes: parsePositiveInt64Env(EnvCodexStateAdminQuota, DefaultCodexStateAdminQuotaBytes),
+		AdminClerkUserIDs:         parseCSVSetEnv(EnvAdminClerkUsers),
 	}
 }
 
@@ -189,7 +193,18 @@ func ServiceForRequest(r *http.Request, cfg ServerEnv) (Service, func(), error) 
 			webexSessionJSON = decrypted
 		}
 	}
-	return Service{Client: client, CalendarURL: calendarURL, WebexSessionJSON: webexSessionJSON}, closeFn, nil
+	webexCredentialsJSON := ""
+	if credentials.EncryptedWebexCredentials != "" {
+		if decrypted, err := box.DecryptString(credentials.EncryptedWebexCredentials); err == nil {
+			webexCredentialsJSON = decrypted
+		}
+	}
+	return Service{
+		Client:               client,
+		CalendarURL:          calendarURL,
+		WebexSessionJSON:     webexSessionJSON,
+		WebexCredentialsJSON: webexCredentialsJSON,
+	}, closeFn, nil
 }
 
 func WriteJSON(w http.ResponseWriter, status int, payload any) {

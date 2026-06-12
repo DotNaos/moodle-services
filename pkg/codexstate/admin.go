@@ -54,7 +54,7 @@ func HandleAdmin(w http.ResponseWriter, r *http.Request, clerkUserID string) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		users, err := store.ListAdminUsers(r.Context(), cfg.CodexStateUserQuotaBytes)
+		users, err := store.ListAdminUsers(r.Context(), cfg.CodexStateUserQuotaBytes, cfg.CodexStateAdminQuotaBytes)
 		if err != nil {
 			svc.WriteError(w, err)
 			return
@@ -89,7 +89,7 @@ func HandleAdmin(w http.ResponseWriter, r *http.Request, clerkUserID string) {
 				return
 			}
 		}
-		user, err := store.UpdateAdminUser(r.Context(), userID, input.CodexStateQuotaBytes, input.ResetCodexStateQuota, input.IsAdmin, cfg.CodexStateUserQuotaBytes)
+		user, err := store.UpdateAdminUser(r.Context(), userID, input.CodexStateQuotaBytes, input.ResetCodexStateQuota, input.IsAdmin, cfg.CodexStateUserQuotaBytes, cfg.CodexStateAdminQuotaBytes)
 		if err != nil {
 			svc.WriteError(w, err)
 			return

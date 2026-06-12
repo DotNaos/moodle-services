@@ -80,6 +80,7 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/attempts", studyPipelineAttemptRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/status", studyPipelineTaskStatusRoute(opts))
 	registerServerlessParityRoutes(router)
 	registerCommandRoutes(router, opts)
 
@@ -131,6 +132,7 @@ func registerServerlessParityRoutes(router *chi.Mux) {
 	}))
 	router.HandleFunc("/api/calendar", withQuery(serverless.Courses, "route", "calendar"))
 	router.HandleFunc("/api/webex/credentials", withQuery(serverless.Keys, "route", "webex-credentials"))
+	router.HandleFunc("/api/user/settings", serverless.UserSettings)
 }
 
 func withQuery(next http.HandlerFunc, key string, value string) http.HandlerFunc {
@@ -256,6 +258,24 @@ func studyPipelineAttemptRoute(opts ServerOptions) http.HandlerFunc {
 	webHandler := withRouteQuery(serverless.Materials, map[string]string{
 		"route":  "study-pipeline",
 		"action": "attempts",
+	}, map[string]string{
+		"courseID": "courseId",
+		"taskID":   "taskId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		localHandler(w, r)
+	}
+}
+
+func studyPipelineTaskStatusRoute(opts ServerOptions) http.HandlerFunc {
+	localHandler := studyPipelineTaskStateHandler(opts, "status")
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": "task-status",
 	}, map[string]string{
 		"courseID": "courseId",
 		"taskID":   "taskId",
@@ -398,6 +418,19 @@ func studyPipelineTaskStateHandler(opts ServerOptions, action string) http.Handl
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"messages": messages})
+			return
+		}
+		if action == "status" {
+			var input contract.StudyPipelineTaskStatusRequest
+			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			if err := studypipeline.RecordTaskStatus("", courseID, taskID, input.Status); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"saved": true, "status": input.Status})
 			return
 		}
 

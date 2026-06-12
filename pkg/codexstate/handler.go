@@ -69,7 +69,7 @@ func codexStateCreate(w http.ResponseWriter, r *http.Request, clerkUserID string
 		svc.WriteError(w, err)
 		return
 	}
-	quotaBytes, err := store.EffectiveCodexStateQuotaBytes(r.Context(), user.ID, cfg.CodexStateUserQuotaBytes)
+	quotaBytes, err := store.EffectiveCodexStateQuotaBytes(r.Context(), user.ID, cfg.CodexStateUserQuotaBytes, cfg.CodexStateAdminQuotaBytes)
 	if err != nil {
 		svc.WriteError(w, err)
 		return

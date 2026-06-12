@@ -11,14 +11,15 @@ import (
 )
 
 type CodexChatInput struct {
-	ArtifactRoot    string
-	UserID          string
-	Prompt          string
-	Images          []contract.CodexRunImage
-	Model           string
-	ReasoningEffort string
-	OutputSchema    json.RawMessage
-	Emit            func(contract.StudyPipelineRefineEvent)
+	ArtifactRoot     string
+	UserID           string
+	Prompt           string
+	Images           []contract.CodexRunImage
+	AttachmentImages []string
+	Model            string
+	ReasoningEffort  string
+	OutputSchema     json.RawMessage
+	Emit             func(contract.StudyPipelineRefineEvent)
 }
 
 func RunCodexChat(ctx context.Context, input CodexChatInput) (contract.CodexRunResponse, error) {
@@ -47,7 +48,7 @@ func RunCodexChat(ctx context.Context, input CodexChatInput) (contract.CodexRunR
 		}
 		model, reasoningEffort = selectDefaultCodexChatModel(catalog, reasoningEffort)
 	}
-	command := buildCodexChatCommand(model, reasoningEffort, len(input.OutputSchema) > 0)
+	command := buildCodexChatCommand(model, reasoningEffort, len(input.OutputSchema) > 0, input.AttachmentImages)
 	if input.Emit != nil {
 		input.Emit(contract.StudyPipelineRefineEvent{
 			Type:            "runner",
@@ -77,9 +78,15 @@ func RunCodexChat(ctx context.Context, input CodexChatInput) (contract.CodexRunR
 
 var ErrCodexNotAuthenticated = fmt.Errorf("Codex is not connected for this user. Connect ChatGPT before asking Codex questions.")
 
-func buildCodexChatCommand(model string, reasoningEffort string, hasSchema bool) string {
+func buildCodexChatCommand(model string, reasoningEffort string, hasSchema bool, attachmentImages []string) string {
 	parts := []string{
-		"codex exec --json --skip-git-repo-check --sandbox read-only",
+		// The ephemeral per-user Docker container is itself the security sandbox
+		// (no host access, only this user's volume mounted). Codex's own bwrap
+		// sandbox cannot create the required mount namespaces inside the
+		// container, so we bypass it — exactly the "externally sandboxed"
+		// scenario that flag is intended for. --cd points the workspace at the
+		// user's volume so the model sees the same "Ablage" (uploads/, etc.).
+		`codex exec --json --skip-git-repo-check --cd "$CODEX_HOME" --dangerously-bypass-approvals-and-sandbox`,
 	}
 	if model != "" {
 		parts = append(parts, `--model "$CODEX_MODEL"`)
@@ -89,6 +96,15 @@ func buildCodexChatCommand(model string, reasoningEffort string, hasSchema bool)
 	}
 	if hasSchema {
 		parts = append(parts, `--output-schema "$CODEX_OUTPUT_SCHEMA_FILE"`)
+	}
+	// Attach uploaded images so Codex can actually see them (vision). Names are
+	// sanitized to the uploads/ basename to keep the shell command safe.
+	for _, name := range attachmentImages {
+		safe := safeUploadFileName(name)
+		if safe == "" {
+			continue
+		}
+		parts = append(parts, `-i "$CODEX_HOME/uploads/`+safe+`"`)
 	}
 	parts = append(parts, `--output-last-message "$CODEX_OUTPUT_FILE" -`)
 	return strings.Join(parts, " ")

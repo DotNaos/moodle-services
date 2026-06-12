@@ -14,9 +14,12 @@ Initial storage model:
 - Store only compressed runtime state, not large Moodle PDFs or generated
   exports.
 - Limit each user's total stored Codex snapshots with
-  `CODEX_STATE_USER_QUOTA_BYTES`. The default is 128 MiB per user. When a new
+  `CODEX_STATE_USER_QUOTA_BYTES`. The default is 512 MiB per user. When a new
   snapshot is saved, older snapshots for that user are pruned until the total is
   back under the quota.
+- Admin users automatically get a higher default quota of 1 GiB, configurable
+  with `CODEX_STATE_ADMIN_QUOTA_BYTES`. Precedence per user: explicit override →
+  admin default (if `is_admin`) → user default.
 - Admins can set a per-user Codex state quota override up to 5 GiB. Bootstrap
   the first admin with `MOODLE_ADMIN_CLERK_USER_IDS`, using a comma-separated
   list of Clerk user IDs.

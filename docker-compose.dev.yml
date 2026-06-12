@@ -1,0 +1,50 @@
+services:
+  codex-runner:
+    build: ./docker/codex-runner
+    image: moodle-study-codex-runner:local
+    profiles: ["codex-build"]
+
+  postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_USER: moodle
+      POSTGRES_PASSWORD: moodle
+      POSTGRES_DB: moodle
+    ports:
+      - "5432:5432"
+    volumes:
+      - moodle-postgres-dev:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moodle -d moodle"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  moodle-api:
+    build: .
+    image: moodle-services:local-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["serve", "--addr", ":8080"]
+    environment:
+      PORT: "8080"
+      MOODLE_HOME: /data
+      DATABASE_URL: postgres://moodle:moodle@postgres:5432/moodle?sslmode=disable
+      MOODLE_WEB_INTERNAL_SECRET: local-moodle-dev-internal-secret
+      APP_ENCRYPTION_KEY: local-moodle-dev-encryption-key
+      API_KEY_HASH_SECRET: local-moodle-dev-hash-secret
+      MOODLE_DOCKER_CONTAINER_DATA_DIR: /data
+      MOODLE_DOCKER_HOST_DATA_DIR: ${HOME}/.moodle
+      MOODLE_OCR_CACHE_DIR: /data/ocr/cache
+      MOODLE_STUDY_ARTIFACT_ROOT: /data/study
+      MOODLE_STUDY_CODEX_DOCKER_IMAGE: moodle-study-codex-runner:local
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ${HOME}/.moodle:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  moodle-postgres-dev:

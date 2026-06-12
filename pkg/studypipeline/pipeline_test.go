@@ -69,13 +69,17 @@ func TestBuildRecognizesCourseSpecificTaskNames(t *testing.T) {
 }
 
 func TestLoadTaskViewDoesNotGenerateFakeTasksWhenCourseHasNoTaskSheets(t *testing.T) {
+	root := t.TempDir()
+	courseID := "17503"
 	resources := []moodle.Resource{
 		{ID: "1", Name: "Folien 1.1 - Einführung", FileType: "pdf", SectionName: "Termin 1"},
 		{ID: "2", Name: "Powerpoint Vorlage", FileType: "pptx", SectionName: "Allgemein"},
 		{ID: "3", Name: "Bewertungskriterien", FileType: "pdf", SectionName: "Leistungsnachweis"},
 	}
-	view, err := LoadTaskView("17503", resources, true, RunOptions{
-		Root: t.TempDir(),
+	writeExtractedFixture(t, root, courseID, "slides", "1-Folien 1.1 - Einführung", "course slide text")
+
+	view, err := LoadTaskView(courseID, resources, true, RunOptions{
+		Root: root,
 		Now:  time.Unix(0, 0),
 	})
 	if err != nil {
@@ -83,6 +87,33 @@ func TestLoadTaskViewDoesNotGenerateFakeTasksWhenCourseHasNoTaskSheets(t *testin
 	}
 	if len(view.Sheets) != 0 {
 		t.Fatalf("expected no fake generated task sheets, got %#v", view.Sheets)
+	}
+}
+
+func TestRecordTaskStatusPersistsDoneProgress(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	resources := []moodle.Resource{
+		{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionName: "Einführung"},
+	}
+	writeExtractedFixture(t, root, courseID, "tasks", "2-Aufgabenblatt 01", "task text")
+	id := taskID(contract.StudyPipelineMaterial{ID: "2", Name: "Aufgabenblatt 01"})
+	if err := RecordTaskStatus(root, courseID, id, "done"); err != nil {
+		t.Fatalf("RecordTaskStatus: %v", err)
+	}
+
+	view, err := LoadTaskView(courseID, resources, false, RunOptions{
+		Root: root,
+		Now:  time.Unix(0, 0),
+	})
+	if err != nil {
+		t.Fatalf("LoadTaskView: %v", err)
+	}
+	if got := view.Sheets[0].Tasks[0].Status; got != "done" {
+		t.Fatalf("status = %q, want done", got)
+	}
+	if view.Progress.Done != 1 || view.Progress.Checked != 1 || view.Progress.Open != 0 {
+		t.Fatalf("unexpected progress: %#v", view.Progress)
 	}
 }
 
@@ -103,6 +134,59 @@ type failingDownloader struct{}
 
 func (failingDownloader) DownloadFileToBuffer(string) (moodle.DownloadResult, error) {
 	return moodle.DownloadResult{}, fmt.Errorf("downloader should not be called")
+}
+
+type staticDownloader struct {
+	data        []byte
+	contentType string
+}
+
+func (downloader staticDownloader) DownloadFileToBuffer(string) (moodle.DownloadResult, error) {
+	return moodle.DownloadResult{Data: downloader.data, ContentType: downloader.contentType}, nil
+}
+
+func TestCuratedStageRunsExtractionWhenMissing(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	resources := []moodle.Resource{
+		{ID: "1", Name: "Lecture Teil 03", URL: "https://example.invalid/teil-03.txt", FileType: "txt"},
+	}
+	_, err := RunStage(courseID, resources, "curated", RunOptions{
+		Root:       root,
+		Now:        time.Unix(0, 0),
+		Downloader: staticDownloader{data: []byte("real extracted lecture text"), contentType: "text/plain"},
+	})
+	if err != nil {
+		t.Fatalf("RunStage curated: %v", err)
+	}
+
+	script, err := os.ReadFile(filepath.Join(root, "courses", courseID, "curated", "script", "Script.mdx"))
+	if err != nil {
+		t.Fatalf("read script: %v", err)
+	}
+	if !strings.Contains(string(script), "real extracted lecture text") {
+		t.Fatalf("expected curated script to include extracted text, got %q", string(script))
+	}
+	if strings.Contains(string(script), "No extracted text was available") {
+		t.Fatalf("curated script still contains missing extraction placeholder: %q", string(script))
+	}
+}
+
+func TestStatusDoesNotReportCuratedWithoutExtractedArtifacts(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	curatedTasksDir := filepath.Join(root, "courses", courseID, "curated", "tasks")
+	if err := os.MkdirAll(curatedTasksDir, 0o755); err != nil {
+		t.Fatalf("mkdir curated tasks: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(curatedTasksDir, "Tasks.mdx"), []byte("# Tasks\n"), 0o644); err != nil {
+		t.Fatalf("write stale curated tasks: %v", err)
+	}
+
+	status := Status(courseID, nil, RunOptions{Root: root, Now: time.Unix(0, 0)})
+	if status.Stage == "curated" || status.Status == "curated-ready" {
+		t.Fatalf("stale curated artifacts without extraction reported ready: %#v", status)
+	}
 }
 
 func TestCuratedStageBuildsScriptFromExtractedContent(t *testing.T) {
@@ -230,6 +314,7 @@ func TestBuildRefinePromptIncludesCustomPromptAsGuidance(t *testing.T) {
 func TestCuratedStageRemovesStaleGeneratedTaskFiles(t *testing.T) {
 	root := t.TempDir()
 	courseID := "19489"
+	writeExtractedFixture(t, root, courseID, "slides", "1-Einführungsfolien", "slide text")
 	staleTaskPath := filepath.Join(root, "courses", courseID, "curated", "tasks", "task-old.mdx")
 	if err := os.MkdirAll(filepath.Dir(staleTaskPath), 0o755); err != nil {
 		t.Fatalf("mkdir stale task: %v", err)
