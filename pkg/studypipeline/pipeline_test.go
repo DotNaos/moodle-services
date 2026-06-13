@@ -207,6 +207,21 @@ func TestLoadExtractedDocumentsBuildsRenderableStructure(t *testing.T) {
 	if _, err := os.Stat(latestPath); err != nil {
 		t.Fatalf("expected latest document structure to be written: %v", err)
 	}
+
+	cached, err := LoadExtractedDocuments(courseID, resources, RunOptions{
+		Root: root,
+		Now:  time.Date(2026, 6, 12, 10, 31, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("LoadExtractedDocuments cached: %v", err)
+	}
+	if cached.RunID != response.RunID {
+		t.Fatalf("expected cached document run %q, got %q", response.RunID, cached.RunID)
+	}
+	unexpectedRunPath := filepath.Join(root, "courses", courseID, "extracted", "runs", "baseline-20260612T103100Z")
+	if _, err := os.Stat(unexpectedRunPath); !os.IsNotExist(err) {
+		t.Fatalf("expected cached read not to create a new run, stat err=%v", err)
+	}
 }
 
 func TestOpenExtractedAssetServesOnlyCourseArtifacts(t *testing.T) {
