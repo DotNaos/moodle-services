@@ -38,6 +38,8 @@ type RunOptions struct {
 	Now         time.Time
 	Downloader  Downloader
 	UserID      string
+	Engine      string
+	ConfigHash  string
 	Refiner     ContentRefiner
 	RefineEvent func(contract.StudyPipelineRefineEvent)
 }
@@ -92,6 +94,14 @@ func ArtifactRootFromEnv() string {
 	return DefaultArtifactRoot
 }
 
+func CourseArtifactRoot(root string, courseID string) string {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		root = ArtifactRootFromEnv()
+	}
+	return courseDir(root, courseID)
+}
+
 func RunStage(courseID string, resources []moodle.Resource, stage string, options RunOptions) (contract.StudyPipelineResponse, error) {
 	stage = strings.TrimSpace(stage)
 	if stage == "" {
@@ -109,13 +119,13 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 	switch stage {
 	case "inventory":
 		inventory := BuildInventory(courseID, resources, now)
-		inventory.ArtifactRoot = courseDir(root, courseID)
+		inventory.ArtifactRoot = CourseArtifactRoot(root, courseID)
 		if err := writeInventory(root, courseID, inventory); err != nil {
 			return contract.StudyPipelineResponse{}, err
 		}
 	case "raw":
 		inventory := BuildInventory(courseID, resources, now)
-		inventory.ArtifactRoot = courseDir(root, courseID)
+		inventory.ArtifactRoot = CourseArtifactRoot(root, courseID)
 		if err := writeInventory(root, courseID, inventory); err != nil {
 			return contract.StudyPipelineResponse{}, err
 		}
@@ -153,7 +163,9 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 
 	response := Build(courseID, resources, stage+"-ready", now)
 	response.Stage = stage
-	response.ArtifactRoot = courseDir(root, courseID)
+	response.ArtifactRoot = CourseArtifactRoot(root, courseID)
+	response.Engine = runEngine(stage, options.Engine)
+	response.ConfigHash = runConfigHash(stage, response.Engine, options.ConfigHash)
 	return response, nil
 }
 
@@ -184,7 +196,7 @@ func Status(courseID string, resources []moodle.Resource, options RunOptions) co
 	}
 	response := Build(courseID, resources, status, now)
 	response.Stage = stage
-	response.ArtifactRoot = courseDir(root, courseID)
+	response.ArtifactRoot = CourseArtifactRoot(root, courseID)
 	return response
 }
 
@@ -1720,6 +1732,35 @@ func writeJSONFile(path string, value any) error {
 func hashBytes(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func runEngine(stage string, engine string) string {
+	engine = strings.TrimSpace(strings.ToLower(engine))
+	if engine != "" {
+		return engine
+	}
+	switch strings.TrimSpace(stage) {
+	case "raw", "inventory":
+		return "moodle_api"
+	case "extracted":
+		return extractedDocumentEngine
+	case "curated":
+		return "codex"
+	default:
+		return "unknown"
+	}
+}
+
+func runConfigHash(stage string, engine string, configHash string) string {
+	configHash = strings.TrimSpace(configHash)
+	if configHash != "" {
+		return configHash
+	}
+	engine = strings.TrimSpace(engine)
+	if engine == "" {
+		engine = runEngine(stage, "")
+	}
+	return "config:" + strings.TrimSpace(stage) + ":" + engine + ":default"
 }
 
 func sortedResources(resources []moodle.Resource) []moodle.Resource {

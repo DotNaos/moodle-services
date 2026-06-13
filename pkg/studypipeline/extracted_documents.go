@@ -2,7 +2,10 @@ package studypipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"mime"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +20,11 @@ import (
 )
 
 const extractedDocumentEngine = "baseline-pdftotext-pdftoppm"
+
+var (
+	ErrInvalidExtractedAssetPath = errors.New("invalid extracted asset path")
+	ErrExtractedAssetNotFound    = errors.New("extracted asset not found")
+)
 
 var (
 	pagePreviewRe     = regexp.MustCompile(`-(\d+)\.png$`)
@@ -43,6 +51,43 @@ func LoadExtractedDocuments(courseID string, resources []moodle.Resource, option
 		}
 	}
 	return writeExtractedDocumentRun(root, courseID, resources, now)
+}
+
+func OpenExtractedAsset(courseID string, assetPath string, options RunOptions) ([]byte, string, error) {
+	root := strings.TrimSpace(options.Root)
+	if root == "" {
+		root = ArtifactRootFromEnv()
+	}
+	courseRoot, err := filepath.Abs(CourseArtifactRoot(root, courseID))
+	if err != nil {
+		return nil, "", err
+	}
+	assetPath = strings.TrimSpace(assetPath)
+	if assetPath == "" {
+		return nil, "", ErrInvalidExtractedAssetPath
+	}
+	if !filepath.IsAbs(assetPath) {
+		assetPath = filepath.Join(courseRoot, filepath.FromSlash(assetPath))
+	}
+	resolved, err := filepath.Abs(assetPath)
+	if err != nil {
+		return nil, "", err
+	}
+	if resolved != courseRoot && !strings.HasPrefix(resolved, courseRoot+string(filepath.Separator)) {
+		return nil, "", ErrInvalidExtractedAssetPath
+	}
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, "", ErrExtractedAssetNotFound
+		}
+		return nil, "", err
+	}
+	contentType := mime.TypeByExtension(filepath.Ext(resolved))
+	if contentType == "" {
+		contentType = http.DetectContentType(data)
+	}
+	return data, contentType, nil
 }
 
 func writeExtractedDocumentRun(root string, courseID string, resources []moodle.Resource, now time.Time) (contract.ExtractedDocumentsResponse, error) {

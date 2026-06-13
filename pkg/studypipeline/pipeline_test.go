@@ -3,6 +3,7 @@ package studypipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -208,6 +209,35 @@ func TestLoadExtractedDocumentsBuildsRenderableStructure(t *testing.T) {
 	}
 }
 
+func TestOpenExtractedAssetServesOnlyCourseArtifacts(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	assetPath := filepath.Join(root, "courses", courseID, "extracted", "runs", "run-1", "assets", "page.png")
+	if err := os.MkdirAll(filepath.Dir(assetPath), 0o755); err != nil {
+		t.Fatalf("mkdir asset dir: %v", err)
+	}
+	if err := os.WriteFile(assetPath, []byte{0x89, 0x50, 0x4e, 0x47}, 0o644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+
+	data, contentType, err := OpenExtractedAsset(courseID, assetPath, RunOptions{Root: root})
+	if err != nil {
+		t.Fatalf("OpenExtractedAsset: %v", err)
+	}
+	if string(data) != string([]byte{0x89, 0x50, 0x4e, 0x47}) || !strings.Contains(contentType, "image/png") {
+		t.Fatalf("unexpected asset response data=%v contentType=%q", data, contentType)
+	}
+
+	outsidePath := filepath.Join(root, "other-course.png")
+	if err := os.WriteFile(outsidePath, []byte("nope"), 0o644); err != nil {
+		t.Fatalf("write outside asset: %v", err)
+	}
+	_, _, err = OpenExtractedAsset(courseID, outsidePath, RunOptions{Root: root})
+	if !errors.Is(err, ErrInvalidExtractedAssetPath) {
+		t.Fatalf("expected invalid asset path, got %v", err)
+	}
+}
+
 func TestLoadTaskViewDoesNotGenerateFakeTasksWhenCourseHasNoTaskSheets(t *testing.T) {
 	root := t.TempDir()
 	courseID := "17503"
@@ -267,6 +297,23 @@ func TestCuratedStageDoesNotDownloadRawMaterials(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("curated stage should not call downloader: %v", err)
+	}
+}
+
+func TestRunStageCarriesRequestedEngineMetadata(t *testing.T) {
+	response, err := RunStage("22584", []moodle.Resource{
+		{ID: "1", Name: "Aufgabenblatt 01", FileType: "pdf"},
+	}, "extracted", RunOptions{
+		Root:       t.TempDir(),
+		Now:        time.Unix(0, 0),
+		Engine:     "marker",
+		ConfigHash: "config:extracted:marker:layout-v1",
+	})
+	if err != nil {
+		t.Fatalf("RunStage extracted: %v", err)
+	}
+	if response.Engine != "marker" || response.ConfigHash != "config:extracted:marker:layout-v1" {
+		t.Fatalf("unexpected run metadata engine=%q config=%q", response.Engine, response.ConfigHash)
 	}
 }
 

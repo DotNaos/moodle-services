@@ -122,12 +122,28 @@
       "destination": "/api/materials?route=study-pipeline&action=stage&stage=curated&courseId=:courseId"
     },
     {
+      "source": "/api/courses/:courseId/study-pipeline/extracted-documents",
+      "destination": "/api/materials?route=study-pipeline&action=extracted-documents&courseId=:courseId"
+    },
+    {
       "source": "/api/courses/:courseId/study-pipeline/script",
       "destination": "/api/materials?route=study-pipeline&action=script&courseId=:courseId"
     },
     {
+      "source": "/api/courses/:courseId/study-pipeline/extracted-asset",
+      "destination": "/api/materials?route=study-pipeline&action=extracted-asset&courseId=:courseId"
+    },
+    {
       "source": "/api/courses/:courseId/study-pipeline/task-view",
       "destination": "/api/materials?route=study-pipeline&action=task-view&courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/runs",
+      "destination": "/api/materials?route=study-pipeline&action=runs&courseId=:courseId"
+    },
+    {
+      "source": "/api/courses/:courseId/study-pipeline/runs/:runId/select",
+      "destination": "/api/materials?route=study-pipeline&action=select-run&courseId=:courseId&runId=:runId"
     },
     {
       "source": "/api/courses/:courseId/study-pipeline/tasks/:taskId/chat",

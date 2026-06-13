@@ -110,15 +110,90 @@ type WebexRecordingsResponse struct {
 }
 
 type StudyPipelineResponse struct {
-	CourseID         string                  `json:"courseId"`
-	Status           string                  `json:"status"`
-	Stage            string                  `json:"stage,omitempty"`
-	CreatedAt        string                  `json:"createdAt"`
-	ArtifactRoot     string                  `json:"artifactRoot,omitempty"`
-	Summary          StudyPipelineSummary    `json:"summary"`
-	Materials        []StudyPipelineMaterial `json:"materials"`
-	TaskLinks        []StudyPipelineTaskLink `json:"taskLinks"`
-	MissingSolutions []StudyPipelineMaterial `json:"missingSolutions"`
+	CourseID         string                        `json:"courseId"`
+	Status           string                        `json:"status"`
+	Stage            string                        `json:"stage,omitempty"`
+	CreatedAt        string                        `json:"createdAt"`
+	ArtifactRoot     string                        `json:"artifactRoot,omitempty"`
+	Engine           string                        `json:"engine,omitempty"`
+	ConfigHash       string                        `json:"configHash,omitempty"`
+	Run              *store.StudyPipelineRunRecord `json:"run,omitempty"`
+	Summary          StudyPipelineSummary          `json:"summary"`
+	Materials        []StudyPipelineMaterial       `json:"materials"`
+	TaskLinks        []StudyPipelineTaskLink       `json:"taskLinks"`
+	MissingSolutions []StudyPipelineMaterial       `json:"missingSolutions"`
+}
+
+type StudyPipelineRunsResponse struct {
+	CourseID         string                           `json:"courseId"`
+	Runs             []store.StudyPipelineRunRecord   `json:"runs"`
+	ActiveSelections []store.ActiveRunSelectionRecord `json:"activeSelections"`
+}
+
+type StudyPipelineSelectRunRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+type StudyPipelineModerationRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+type StudyPipelineStageRequest struct {
+	Engine     string `json:"engine,omitempty"`
+	ConfigHash string `json:"configHash,omitempty"`
+}
+
+type StudyPipelineSelectRunResponse struct {
+	Selection store.ActiveRunSelectionRecord `json:"selection"`
+}
+
+type StudyPipelinePublishRunResponse struct {
+	Selection *store.ActiveRunSelectionRecord `json:"selection,omitempty"`
+	Audit     store.StudyPipelineAuditRecord  `json:"audit"`
+}
+
+type StudyPipelineFeedbackRequest struct {
+	TargetID         string `json:"targetId"`
+	TargetKind       string `json:"targetKind"`
+	FeedbackType     string `json:"feedbackType"`
+	Message          string `json:"message,omitempty"`
+	SourceRunID      string `json:"sourceRunId,omitempty"`
+	SourceArtifactID string `json:"sourceArtifactId,omitempty"`
+}
+
+type StudyPipelineFeedbackResponse struct {
+	Feedback store.StudyPipelineFeedbackRecord `json:"feedback"`
+}
+
+type StudyPipelineFeedbackModerationResponse struct {
+	Feedback store.StudyPipelineFeedbackRecord `json:"feedback"`
+	Audit    store.StudyPipelineAuditRecord    `json:"audit"`
+}
+
+type StudyPipelineProposalRequest struct {
+	TargetID         string `json:"targetId"`
+	TargetKind       string `json:"targetKind"`
+	Title            string `json:"title,omitempty"`
+	ContentPreview   string `json:"contentPreview,omitempty"`
+	SourceRunID      string `json:"sourceRunId,omitempty"`
+	SourceArtifactID string `json:"sourceArtifactId,omitempty"`
+	Model            string `json:"model,omitempty"`
+}
+
+type StudyPipelineProposalResponse struct {
+	Proposal store.StudyPipelineProposalRecord `json:"proposal"`
+}
+
+type StudyPipelineProposalModerationResponse struct {
+	Proposal store.StudyPipelineProposalRecord `json:"proposal"`
+	Audit    store.StudyPipelineAuditRecord    `json:"audit"`
+}
+
+type StudyPipelineReviewResponse struct {
+	CourseID  string                              `json:"courseId"`
+	Feedback  []store.StudyPipelineFeedbackRecord `json:"feedback"`
+	Proposals []store.StudyPipelineProposalRecord `json:"proposals"`
+	Audit     []store.StudyPipelineAuditRecord    `json:"audit"`
 }
 
 type StudyPipelineSummary struct {

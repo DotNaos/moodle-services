@@ -4,12 +4,17 @@ import (
 	"context"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/DotNaos/moodle-services/internal/store"
 	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
+	"github.com/DotNaos/moodle-services/pkg/studypipeline"
 )
 
-func recordLocalStudyPipeline(ctx context.Context, response contract.StudyPipelineResponse) error {
+func recordLocalStudyPipeline(ctx context.Context, response *contract.StudyPipelineResponse) error {
+	if response == nil {
+		return nil
+	}
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if databaseURL == "" {
 		return nil
@@ -24,15 +29,55 @@ func recordLocalStudyPipeline(ctx context.Context, response contract.StudyPipeli
 	if err != nil {
 		return err
 	}
-	return st.RecordStudyPipeline(ctx, store.StudyPipelineRecordInput{
+	run, err := st.RecordStudyPipeline(ctx, store.StudyPipelineRecordInput{
 		UserID:       userID,
 		CourseID:     response.CourseID,
 		Stage:        response.Stage,
+		Engine:       response.Engine,
+		ConfigHash:   response.ConfigHash,
 		ArtifactRoot: response.ArtifactRoot,
 		Summary:      response.Summary,
 		Materials:    studyPipelineMaterialRecords(response.Materials),
 		TaskLinks:    studyPipelineTaskLinkRecords(response.TaskLinks),
 	})
+	if err != nil {
+		return err
+	}
+	if run.ID != "" {
+		response.Run = &run
+	}
+	return nil
+}
+
+func recordLocalStudyPipelineFailure(ctx context.Context, courseID string, stage string, options studypipeline.RunOptions, err error) error {
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" || strings.TrimSpace(courseID) == "" {
+		return nil
+	}
+	st, openErr := store.Open(databaseURL)
+	if openErr != nil {
+		return openErr
+	}
+	defer func() { _ = st.Close() }()
+
+	userID, ensureErr := st.EnsureStudyPipelineSystemUser(ctx)
+	if ensureErr != nil {
+		return ensureErr
+	}
+	now := time.Now().UTC()
+	_, recordErr := st.RecordStudyPipeline(ctx, store.StudyPipelineRecordInput{
+		UserID:       userID,
+		CourseID:     courseID,
+		Stage:        defaultStudyPipelineStage(stage),
+		Engine:       options.Engine,
+		ConfigHash:   options.ConfigHash,
+		ArtifactRoot: studypipeline.CourseArtifactRoot("", courseID),
+		Status:       "failed",
+		Error:        errorMessage(err),
+		StartedAt:    now,
+		FinishedAt:   now,
+	})
+	return recordErr
 }
 
 func studyPipelineMaterialRecords(materials []contract.StudyPipelineMaterial) []store.StudyPipelineMaterialRecord {
@@ -50,6 +95,21 @@ func studyPipelineMaterialRecords(materials []contract.StudyPipelineMaterial) []
 		})
 	}
 	return records
+}
+
+func defaultStudyPipelineStage(stage string) string {
+	stage = strings.TrimSpace(stage)
+	if stage == "" {
+		return "curated"
+	}
+	return stage
+}
+
+func errorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func studyPipelineTaskLinkRecords(links []contract.StudyPipelineTaskLink) []store.StudyPipelineTaskLinkRecord {

@@ -89,6 +89,110 @@ func ensureCompatibilitySchema(ctx context.Context, db *sql.DB) error {
 		  add column if not exists encrypted_webex_credentials text,
 		  add column if not exists webex_credentials_updated_at timestamptz
 	`)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `
+		alter table study_pipeline_runs
+		  add column if not exists source_id text,
+		  add column if not exists resource_id text,
+		  add column if not exists file_hash text,
+		  add column if not exists engine text not null default 'unknown',
+		  add column if not exists config_hash text not null default 'config:default',
+		  add column if not exists ownership text not null default 'shared',
+		  add column if not exists created_by uuid references users(id) on delete set null,
+		  add column if not exists artifact_refs jsonb not null default '[]'::jsonb;
+
+		update study_pipeline_runs
+		set source_id = 'source:moodle-course:' || course_id
+		where source_id is null or source_id = '';
+
+		alter table study_pipeline_runs
+		  alter column source_id set not null;
+
+		alter table study_pipeline_runs
+		  drop constraint if exists study_pipeline_runs_stage_check,
+		  add constraint study_pipeline_runs_stage_check
+		    check (stage in ('inventory', 'raw', 'extracted', 'curated'));
+
+		alter table study_pipeline_runs
+		  drop constraint if exists study_pipeline_runs_status_check,
+		  add constraint study_pipeline_runs_status_check
+		    check (status in ('queued', 'running', 'succeeded', 'failed', 'stale'));
+
+		alter table study_pipeline_runs
+		  drop constraint if exists study_pipeline_runs_ownership_check,
+		  add constraint study_pipeline_runs_ownership_check
+		    check (ownership in ('shared', 'user_owned'));
+
+		create index if not exists study_pipeline_runs_source_stage_idx
+		  on study_pipeline_runs (source_id, coalesce(resource_id, ''), stage, created_at desc);
+
+		create table if not exists active_run_selections (
+		  source_id text not null,
+		  resource_id text not null default '',
+		  stage text not null check (stage in ('inventory', 'raw', 'extracted', 'curated')),
+		  active_run_id uuid not null references study_pipeline_runs(id) on delete cascade,
+		  selected_by uuid references users(id) on delete set null,
+		  selected_at timestamptz not null default now(),
+		  reason text not null default '',
+		  primary key (source_id, resource_id, stage)
+		);
+
+		create table if not exists study_pipeline_feedback (
+		  id uuid primary key default gen_random_uuid(),
+		  course_id text not null,
+		  target_id text not null,
+		  target_kind text not null,
+		  feedback_type text not null,
+		  message text not null default '',
+		  source_run_id uuid references study_pipeline_runs(id) on delete set null,
+		  source_artifact_id text,
+		  status text not null default 'open' check (status in ('open', 'triaged', 'resolved', 'dismissed')),
+		  created_by uuid references users(id) on delete set null,
+		  created_at timestamptz not null default now(),
+		  updated_at timestamptz not null default now()
+		);
+
+		create index if not exists study_pipeline_feedback_course_idx
+		  on study_pipeline_feedback (course_id, created_at desc);
+
+		create table if not exists study_pipeline_proposals (
+		  id uuid primary key default gen_random_uuid(),
+		  course_id text not null,
+		  target_id text not null,
+		  target_kind text not null,
+		  title text not null,
+		  content_preview text not null default '',
+		  source_run_id uuid references study_pipeline_runs(id) on delete set null,
+		  source_artifact_id text,
+		  model text,
+		  status text not null default 'private' check (status in ('private', 'submitted_for_review', 'promoted', 'dismissed')),
+		  created_by uuid references users(id) on delete set null,
+		  submitted_at timestamptz,
+		  created_at timestamptz not null default now(),
+		  updated_at timestamptz not null default now()
+		);
+
+		create index if not exists study_pipeline_proposals_course_idx
+		  on study_pipeline_proposals (course_id, created_at desc);
+
+		create table if not exists study_pipeline_audit_events (
+		  id uuid primary key default gen_random_uuid(),
+		  course_id text not null,
+		  actor_id uuid references users(id) on delete set null,
+		  action text not null,
+		  target_kind text not null,
+		  target_id text not null,
+		  source_run_id uuid references study_pipeline_runs(id) on delete set null,
+		  source_artifact_id text,
+		  message text not null default '',
+		  created_at timestamptz not null default now()
+		);
+
+		create index if not exists study_pipeline_audit_events_course_idx
+		  on study_pipeline_audit_events (course_id, created_at desc);
+	`)
 	return err
 }
 

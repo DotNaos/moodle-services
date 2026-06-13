@@ -77,8 +77,21 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses/{courseID}/study-pipeline/status", studyPipelineStatusRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/inventory", studyPipelineInventoryRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/extracted-documents", studyPipelineExtractedDocumentsRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/extracted-asset", studyPipelineExtractedAssetRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/script", studyPipelineScriptRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/task-view", studyPipelineTaskViewRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/runs", studyPipelineRunsRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/runs/{runID}/select", studyPipelineSelectRunRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/runs/{runID}/publish", studyPipelinePublishRunRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/runs/{runID}/unpublish", studyPipelineUnpublishRunRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/review", studyPipelineReviewRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/feedback", studyPipelineFeedbackRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/feedback/{feedbackID}/resolve", studyPipelineResolveFeedbackRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/feedback/{feedbackID}/dismiss", studyPipelineDismissFeedbackRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/proposals", studyPipelineProposalsRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/proposals/{proposalID}/submit", studyPipelineSubmitProposalRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/proposals/{proposalID}/promote", studyPipelinePromoteProposalRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/proposals/{proposalID}/dismiss", studyPipelineDismissProposalRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/refine", studyPipelineRefineRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
@@ -231,8 +244,96 @@ func studyPipelineExtractedDocumentsRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineReadRoute(opts, "extracted-documents")
 }
 
+func studyPipelineExtractedAssetRoute(opts ServerOptions) http.HandlerFunc {
+	localHandler := studyPipelineExtractedAssetHandler(opts)
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": "extracted-asset",
+	}, map[string]string{
+		"courseID": "courseId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
+		localHandler(w, r)
+	}
+}
+
 func studyPipelineTaskViewRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineReadRoute(opts, "task-view")
+}
+
+func studyPipelineRunsRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "runs")
+}
+
+func studyPipelineSelectRunRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "select-run")
+}
+
+func studyPipelinePublishRunRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "publish-run")
+}
+
+func studyPipelineUnpublishRunRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "unpublish-run")
+}
+
+func studyPipelineReviewRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "review")
+}
+
+func studyPipelineFeedbackRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "feedback")
+}
+
+func studyPipelineResolveFeedbackRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineIDStateRoute("resolve-feedback", "feedbackID", "feedbackId")
+}
+
+func studyPipelineDismissFeedbackRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineIDStateRoute("dismiss-feedback", "feedbackID", "feedbackId")
+}
+
+func studyPipelineProposalsRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "proposals")
+}
+
+func studyPipelineSubmitProposalRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineIDStateRoute("submit-proposal", "proposalID", "proposalId")
+}
+
+func studyPipelinePromoteProposalRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineIDStateRoute("promote-proposal", "proposalID", "proposalId")
+}
+
+func studyPipelineDismissProposalRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineIDStateRoute("dismiss-proposal", "proposalID", "proposalId")
+}
+
+func studyPipelineIDStateRoute(action string, pathParam string, queryParam string) http.HandlerFunc {
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": action,
+	}, map[string]string{
+		"courseID": "courseId",
+		pathParam:  queryParam,
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
+		writeError(w, http.StatusUnauthorized, fmt.Errorf("authentication required"))
+	}
 }
 
 func studyPipelineRefineRoute(opts ServerOptions) http.HandlerFunc {
@@ -318,6 +419,26 @@ func studyPipelineTaskStatusRoute(opts ServerOptions) http.HandlerFunc {
 	}
 }
 
+func studyPipelineRunStateRoute(opts ServerOptions, action string) http.HandlerFunc {
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": action,
+	}, map[string]string{
+		"courseID": "courseId",
+		"runID":    "runId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
+		writeError(w, http.StatusUnauthorized, fmt.Errorf("authentication required"))
+	}
+}
+
 func studyPipelineReadRoute(opts ServerOptions, action string) http.HandlerFunc {
 	localHandler := studyPipelineReadHandler(opts, action)
 	webHandler := withRouteQuery(serverless.Materials, map[string]string{
@@ -373,20 +494,38 @@ func studyPipelineStageHandler(opts ServerOptions, fallbackStage string) http.Ha
 		if stage == "" {
 			stage = fallbackStage
 		}
-		response, err := studypipeline.RunStage(courseID, resources, stage, studypipeline.RunOptions{
+		options := studypipeline.RunOptions{
 			Downloader: downloader,
 			Now:        time.Now(),
-		})
+		}
+		applyLocalStageRequestOptions(r, &options)
+		response, err := studypipeline.RunStage(courseID, resources, stage, options)
 		if err != nil {
+			if recordErr := recordLocalStudyPipelineFailure(r.Context(), courseID, stage, options, err); recordErr != nil {
+				writeError(w, http.StatusInternalServerError, recordErr)
+				return
+			}
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		if err := recordLocalStudyPipeline(r.Context(), response); err != nil {
+		if err := recordLocalStudyPipeline(r.Context(), &response); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, response)
 	}
+}
+
+func applyLocalStageRequestOptions(r *http.Request, options *studypipeline.RunOptions) {
+	if r.Body == nil {
+		return
+	}
+	var input contract.StudyPipelineStageRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		return
+	}
+	options.Engine = input.Engine
+	options.ConfigHash = input.ConfigHash
 }
 
 func studyPipelineReadHandler(opts ServerOptions, action string) http.HandlerFunc {
@@ -429,6 +568,30 @@ func studyPipelineReadHandler(opts ServerOptions, action string) http.HandlerFun
 		default:
 			writeError(w, http.StatusNotFound, fmt.Errorf("unknown study pipeline action %q", action))
 		}
+	}
+}
+
+func studyPipelineExtractedAssetHandler(opts ServerOptions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		courseID, _, _, ok := studyPipelineContext(w, r, opts)
+		if !ok {
+			return
+		}
+		data, contentType, err := studypipeline.OpenExtractedAsset(courseID, r.URL.Query().Get("path"), studypipeline.RunOptions{Now: time.Now()})
+		if err != nil {
+			switch {
+			case errors.Is(err, studypipeline.ErrInvalidExtractedAssetPath):
+				writeError(w, http.StatusBadRequest, err)
+			case errors.Is(err, studypipeline.ErrExtractedAssetNotFound):
+				writeError(w, http.StatusNotFound, err)
+			default:
+				writeError(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "private, max-age=3600")
+		_, _ = w.Write(data)
 	}
 }
 
