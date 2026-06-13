@@ -69,5 +69,9 @@ jobs:
             env_prefix+="${item} "
           done
 
+          echo "Uploading database migrations..."
+          tar -czf - migrations | ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            "${env_prefix}bash -lc 'set -euo pipefail; deploy_dir=\"\${MOODLE_DEPLOY_DIR:-\${HOME}/moodle-services}\"; mkdir -p \"\${deploy_dir}\"; rm -rf \"\${deploy_dir}/migrations\"; tar -xzf - -C \"\${deploy_dir}\"'"
+
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
             "${env_prefix}bash -s" < scripts/deploy-vps.sh
