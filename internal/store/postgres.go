@@ -115,6 +115,11 @@ func ensureCompatibilitySchema(ctx context.Context, db *sql.DB) error {
 		  add constraint study_pipeline_runs_stage_check
 		    check (stage in ('inventory', 'raw', 'extracted', 'curated'));
 
+		alter table study_artifacts
+		  drop constraint if exists study_artifacts_stage_check,
+		  add constraint study_artifacts_stage_check
+		    check (stage in ('inventory', 'raw', 'extracted', 'curated'));
+
 		alter table study_pipeline_runs
 		  drop constraint if exists study_pipeline_runs_status_check,
 		  add constraint study_pipeline_runs_status_check
