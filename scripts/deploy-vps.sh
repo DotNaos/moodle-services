@@ -7,8 +7,6 @@ COMPOSE_FILE="${MOODLE_COMPOSE_FILE:-docker-compose.yml}"
 HEALTH_URL="${MOODLE_HEALTH_URL:-http://127.0.0.1:8080/healthz}"
 MIGRATIONS_DIR="${MOODLE_MIGRATIONS_DIR:-${DEPLOY_DIR}/migrations}"
 POSTGRES_SERVICE="${MOODLE_POSTGRES_SERVICE:-postgres}"
-POSTGRES_USER="${MOODLE_POSTGRES_USER:-moodle}"
-POSTGRES_DB="${MOODLE_POSTGRES_DB:-moodle}"
 
 if [[ ! -d "${DEPLOY_DIR}" ]]; then
   echo "Deploy directory not found: ${DEPLOY_DIR}" >&2
@@ -41,6 +39,10 @@ if [[ -d "${MIGRATIONS_DIR}" ]]; then
   if [[ "${#migrations[@]}" -eq 0 ]]; then
     echo "No migration files found."
   else
+    POSTGRES_USER="${MOODLE_POSTGRES_USER:-$(docker compose -f "${COMPOSE_FILE}" exec -T "${POSTGRES_SERVICE}" printenv POSTGRES_USER 2>/dev/null || true)}"
+    POSTGRES_DB="${MOODLE_POSTGRES_DB:-$(docker compose -f "${COMPOSE_FILE}" exec -T "${POSTGRES_SERVICE}" printenv POSTGRES_DB 2>/dev/null || true)}"
+    POSTGRES_USER="${POSTGRES_USER:-postgres}"
+    POSTGRES_DB="${POSTGRES_DB:-${POSTGRES_USER}}"
     for migration in "${migrations[@]}"; do
       echo "Applying $(basename "${migration}")..."
       docker compose -f "${COMPOSE_FILE}" exec -T "${POSTGRES_SERVICE}" \
