@@ -11,25 +11,27 @@ import (
 const studyPipelineSystemSiteURL = "internal://moodle-services/study-pipeline"
 
 type StudyPipelineRecordInput struct {
-	UserID       string
-	CourseID     string
-	SourceID     string
-	ResourceID   string
-	FileHash     string
-	Stage        string
-	Engine       string
-	ConfigHash   string
-	Ownership    string
-	CreatedBy    string
-	Status       string
-	ArtifactRoot string
-	Error        string
-	StartedAt    time.Time
-	FinishedAt   time.Time
-	ArtifactRefs []StudyPipelineArtifactRef
-	Summary      any
-	Materials    []StudyPipelineMaterialRecord
-	TaskLinks    []StudyPipelineTaskLinkRecord
+	UserID            string
+	CourseID          string
+	SourceID          string
+	ResourceID        string
+	FileHash          string
+	Stage             string
+	Engine            string
+	ConfigHash        string
+	Ownership         string
+	CreatedBy         string
+	Status            string
+	ArtifactRoot      string
+	Error             string
+	StartedAt         time.Time
+	FinishedAt        time.Time
+	ArtifactRefs      []StudyPipelineArtifactRef
+	CurationChecklist *StudyPipelineCurationChecklist
+	ElementDecisions  []StudyPipelineElementDecision
+	Summary           any
+	Materials         []StudyPipelineMaterialRecord
+	TaskLinks         []StudyPipelineTaskLinkRecord
 }
 
 type StudyPipelineArtifactRef struct {
@@ -41,6 +43,39 @@ type StudyPipelineArtifactRef struct {
 	PageNumber int            `json:"pageNumber,omitempty"`
 	BlockID    string         `json:"blockId,omitempty"`
 	Metadata   map[string]any `json:"metadata,omitempty"`
+}
+
+type StudyPipelineElementDecision struct {
+	ID                        string         `json:"id,omitempty"`
+	SourceElementID           string         `json:"sourceElementId,omitempty"`
+	SourceArtifactID          string         `json:"sourceArtifactId,omitempty"`
+	SourceAssetID             string         `json:"sourceAssetId,omitempty"`
+	SourcePageImageArtifactID string         `json:"sourcePageImageArtifactId,omitempty"`
+	OutputArtifactID          string         `json:"outputArtifactId,omitempty"`
+	ElementKind               string         `json:"elementKind,omitempty"`
+	Outcome                   string         `json:"outcome"`
+	Reason                    string         `json:"reason,omitempty"`
+	DecidedBy                 string         `json:"decidedBy,omitempty"`
+	Confidence                string         `json:"confidence,omitempty"`
+	PageNumber                int            `json:"pageNumber,omitempty"`
+	CreatedAt                 string         `json:"createdAt,omitempty"`
+	Metadata                  map[string]any `json:"metadata,omitempty"`
+}
+
+type StudyPipelineCurationChecklistItem struct {
+	ID                 string `json:"id"`
+	Label              string `json:"label"`
+	Status             string `json:"status"`
+	EvidenceArtifactID string `json:"evidenceArtifactId,omitempty"`
+	Reason             string `json:"reason,omitempty"`
+}
+
+type StudyPipelineCurationChecklist struct {
+	Status                  string                               `json:"status"`
+	CheckedBy               string                               `json:"checkedBy,omitempty"`
+	CheckedAt               string                               `json:"checkedAt,omitempty"`
+	RenderPreviewArtifactID string                               `json:"renderPreviewArtifactId,omitempty"`
+	Items                   []StudyPipelineCurationChecklistItem `json:"items"`
 }
 
 type StudyPipelineMaterialRecord struct {
@@ -61,23 +96,25 @@ type StudyPipelineTaskLinkRecord struct {
 }
 
 type StudyPipelineRunRecord struct {
-	ID           string                     `json:"id"`
-	SourceID     string                     `json:"sourceId"`
-	CourseID     string                     `json:"courseId"`
-	ResourceID   string                     `json:"resourceId,omitempty"`
-	FileHash     string                     `json:"fileHash,omitempty"`
-	Stage        string                     `json:"stage"`
-	Engine       string                     `json:"engine"`
-	ConfigHash   string                     `json:"configHash"`
-	Ownership    string                     `json:"ownership"`
-	CreatedBy    string                     `json:"createdBy,omitempty"`
-	Status       string                     `json:"status"`
-	ArtifactRoot string                     `json:"artifactRoot"`
-	Error        string                     `json:"error,omitempty"`
-	StartedAt    *time.Time                 `json:"startedAt,omitempty"`
-	FinishedAt   *time.Time                 `json:"finishedAt,omitempty"`
-	CreatedAt    time.Time                  `json:"createdAt"`
-	ArtifactRefs []StudyPipelineArtifactRef `json:"artifactRefs"`
+	ID                string                          `json:"id"`
+	SourceID          string                          `json:"sourceId"`
+	CourseID          string                          `json:"courseId"`
+	ResourceID        string                          `json:"resourceId,omitempty"`
+	FileHash          string                          `json:"fileHash,omitempty"`
+	Stage             string                          `json:"stage"`
+	Engine            string                          `json:"engine"`
+	ConfigHash        string                          `json:"configHash"`
+	Ownership         string                          `json:"ownership"`
+	CreatedBy         string                          `json:"createdBy,omitempty"`
+	Status            string                          `json:"status"`
+	ArtifactRoot      string                          `json:"artifactRoot"`
+	Error             string                          `json:"error,omitempty"`
+	StartedAt         *time.Time                      `json:"startedAt,omitempty"`
+	FinishedAt        *time.Time                      `json:"finishedAt,omitempty"`
+	CreatedAt         time.Time                       `json:"createdAt"`
+	ArtifactRefs      []StudyPipelineArtifactRef      `json:"artifactRefs"`
+	CurationChecklist *StudyPipelineCurationChecklist `json:"curationChecklist,omitempty"`
+	ElementDecisions  []StudyPipelineElementDecision  `json:"elementDecisions,omitempty"`
 }
 
 type ActiveRunSelectionRecord struct {
@@ -102,6 +139,14 @@ func (s *Store) RecordStudyPipeline(ctx context.Context, input StudyPipelineReco
 	if err != nil {
 		return StudyPipelineRunRecord{}, err
 	}
+	curationChecklistJSON, err := json.Marshal(input.CurationChecklist)
+	if err != nil {
+		return StudyPipelineRunRecord{}, err
+	}
+	elementDecisionsJSON, err := json.Marshal(input.ElementDecisions)
+	if err != nil {
+		return StudyPipelineRunRecord{}, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return StudyPipelineRunRecord{}, err
@@ -110,25 +155,33 @@ func (s *Store) RecordStudyPipeline(ctx context.Context, input StudyPipelineReco
 
 	var run StudyPipelineRunRecord
 	var artifactRefsRaw string
+	var curationChecklistRaw string
+	var elementDecisionsRaw string
 	err = tx.QueryRowContext(ctx, `
 		insert into study_pipeline_runs (
 			user_id, course_id, source_id, resource_id, file_hash, stage, engine, config_hash,
-			ownership, created_by, status, artifact_root, error, started_at, finished_at, artifact_refs
+			ownership, created_by, status, artifact_root, error, started_at, finished_at, artifact_refs,
+			curation_checklist, element_decisions
 		)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18::jsonb)
 		returning id::text, source_id, course_id, coalesce(resource_id, ''), coalesce(file_hash, ''),
 			stage, engine, config_hash, ownership, coalesce(created_by::text, ''), status,
-			artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text
+			artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text,
+			coalesce(curation_checklist::text, ''), coalesce(element_decisions::text, '[]')
 	`, nullableRunOwner(input), input.CourseID, input.SourceID, nullString(input.ResourceID), nullString(input.FileHash),
 		input.Stage, input.Engine, input.ConfigHash, input.Ownership, nullableUUID(input.CreatedBy), input.Status,
-		input.ArtifactRoot, nullString(input.Error), input.StartedAt, input.FinishedAt, string(artifactRefsJSON)).
+		input.ArtifactRoot, nullString(input.Error), input.StartedAt, input.FinishedAt, string(artifactRefsJSON),
+		string(curationChecklistJSON), string(elementDecisionsJSON)).
 		Scan(&run.ID, &run.SourceID, &run.CourseID, &run.ResourceID, &run.FileHash, &run.Stage, &run.Engine,
 			&run.ConfigHash, &run.Ownership, &run.CreatedBy, &run.Status, &run.ArtifactRoot, &run.Error,
-			&run.StartedAt, &run.FinishedAt, &run.CreatedAt, &artifactRefsRaw)
+			&run.StartedAt, &run.FinishedAt, &run.CreatedAt, &artifactRefsRaw, &curationChecklistRaw, &elementDecisionsRaw)
 	if err != nil {
 		return StudyPipelineRunRecord{}, err
 	}
 	if err := json.Unmarshal([]byte(artifactRefsRaw), &run.ArtifactRefs); err != nil {
+		return StudyPipelineRunRecord{}, err
+	}
+	if err := decodeStudyPipelineRunExtras(curationChecklistRaw, elementDecisionsRaw, &run); err != nil {
 		return StudyPipelineRunRecord{}, err
 	}
 	for _, material := range input.Materials {
@@ -205,7 +258,8 @@ func (s *Store) ListStudyPipelineRuns(ctx context.Context, userID string, course
 	query := `
 		select id::text, source_id, course_id, coalesce(resource_id, ''), coalesce(file_hash, ''),
 			stage, engine, config_hash, ownership, coalesce(created_by::text, ''), status,
-			artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text
+			artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text,
+			coalesce(curation_checklist::text, ''), coalesce(element_decisions::text, '[]')
 		from study_pipeline_runs
 		where course_id = $1 and ownership = 'shared'
 		order by created_at desc, id desc
@@ -215,7 +269,8 @@ func (s *Store) ListStudyPipelineRuns(ctx context.Context, userID string, course
 		query = `
 			select id::text, source_id, course_id, coalesce(resource_id, ''), coalesce(file_hash, ''),
 				stage, engine, config_hash, ownership, coalesce(created_by::text, ''), status,
-				artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text
+				artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text,
+				coalesce(curation_checklist::text, ''), coalesce(element_decisions::text, '[]')
 			from study_pipeline_runs
 			where course_id = $1 and (ownership = 'shared' or user_id = $2::uuid or created_by = $2::uuid)
 			order by created_at desc, id desc
@@ -256,7 +311,8 @@ func (s *Store) SelectActiveStudyPipelineRun(ctx context.Context, userID string,
 	query := `
 		select id::text, source_id, course_id, coalesce(resource_id, ''), coalesce(file_hash, ''),
 			stage, engine, config_hash, ownership, coalesce(created_by::text, ''), status,
-			artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text
+			artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text,
+			coalesce(curation_checklist::text, ''), coalesce(element_decisions::text, '[]')
 		from study_pipeline_runs
 		where id = $1::uuid and course_id = $2 and ownership = 'shared'
 	`
@@ -265,7 +321,8 @@ func (s *Store) SelectActiveStudyPipelineRun(ctx context.Context, userID string,
 		query = `
 			select id::text, source_id, course_id, coalesce(resource_id, ''), coalesce(file_hash, ''),
 				stage, engine, config_hash, ownership, coalesce(created_by::text, ''), status,
-				artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text
+				artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text,
+				coalesce(curation_checklist::text, ''), coalesce(element_decisions::text, '[]')
 			from study_pipeline_runs
 			where id = $1::uuid and course_id = $2 and (ownership = 'shared' or user_id = $3::uuid or created_by = $3::uuid)
 		`
@@ -335,7 +392,8 @@ func (s *Store) UnpublishStudyPipelineRun(ctx context.Context, userID string, co
 	row := s.db.QueryRowContext(ctx, `
 		select id::text, source_id, course_id, coalesce(resource_id, ''), coalesce(file_hash, ''),
 			stage, engine, config_hash, ownership, coalesce(created_by::text, ''), status,
-			artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text
+			artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text,
+			coalesce(curation_checklist::text, ''), coalesce(element_decisions::text, '[]')
 		from study_pipeline_runs
 		where id = $1::uuid and course_id = $2
 	`, runID, strings.TrimSpace(courseID))
@@ -385,9 +443,11 @@ type studyPipelineRunScanner interface {
 func scanStudyPipelineRun(row studyPipelineRunScanner) (StudyPipelineRunRecord, error) {
 	var run StudyPipelineRunRecord
 	var artifactRefsRaw string
+	var curationChecklistRaw string
+	var elementDecisionsRaw string
 	err := row.Scan(&run.ID, &run.SourceID, &run.CourseID, &run.ResourceID, &run.FileHash, &run.Stage, &run.Engine,
 		&run.ConfigHash, &run.Ownership, &run.CreatedBy, &run.Status, &run.ArtifactRoot, &run.Error,
-		&run.StartedAt, &run.FinishedAt, &run.CreatedAt, &artifactRefsRaw)
+		&run.StartedAt, &run.FinishedAt, &run.CreatedAt, &artifactRefsRaw, &curationChecklistRaw, &elementDecisionsRaw)
 	if err != nil {
 		return StudyPipelineRunRecord{}, err
 	}
@@ -396,7 +456,26 @@ func scanStudyPipelineRun(row studyPipelineRunScanner) (StudyPipelineRunRecord, 
 			return StudyPipelineRunRecord{}, err
 		}
 	}
+	if err := decodeStudyPipelineRunExtras(curationChecklistRaw, elementDecisionsRaw, &run); err != nil {
+		return StudyPipelineRunRecord{}, err
+	}
 	return run, nil
+}
+
+func decodeStudyPipelineRunExtras(curationChecklistRaw string, elementDecisionsRaw string, run *StudyPipelineRunRecord) error {
+	if strings.TrimSpace(curationChecklistRaw) != "" && strings.TrimSpace(curationChecklistRaw) != "null" {
+		var checklist StudyPipelineCurationChecklist
+		if err := json.Unmarshal([]byte(curationChecklistRaw), &checklist); err != nil {
+			return err
+		}
+		run.CurationChecklist = &checklist
+	}
+	if strings.TrimSpace(elementDecisionsRaw) != "" && strings.TrimSpace(elementDecisionsRaw) != "null" {
+		if err := json.Unmarshal([]byte(elementDecisionsRaw), &run.ElementDecisions); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) listActiveStudyPipelineSelections(ctx context.Context, sourceID string) ([]ActiveRunSelectionRecord, error) {

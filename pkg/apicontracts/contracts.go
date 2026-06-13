@@ -110,18 +110,21 @@ type WebexRecordingsResponse struct {
 }
 
 type StudyPipelineResponse struct {
-	CourseID         string                        `json:"courseId"`
-	Status           string                        `json:"status"`
-	Stage            string                        `json:"stage,omitempty"`
-	CreatedAt        string                        `json:"createdAt"`
-	ArtifactRoot     string                        `json:"artifactRoot,omitempty"`
-	Engine           string                        `json:"engine,omitempty"`
-	ConfigHash       string                        `json:"configHash,omitempty"`
-	Run              *store.StudyPipelineRunRecord `json:"run,omitempty"`
-	Summary          StudyPipelineSummary          `json:"summary"`
-	Materials        []StudyPipelineMaterial       `json:"materials"`
-	TaskLinks        []StudyPipelineTaskLink       `json:"taskLinks"`
-	MissingSolutions []StudyPipelineMaterial       `json:"missingSolutions"`
+	CourseID          string                                `json:"courseId"`
+	Status            string                                `json:"status"`
+	Stage             string                                `json:"stage,omitempty"`
+	CreatedAt         string                                `json:"createdAt"`
+	ArtifactRoot      string                                `json:"artifactRoot,omitempty"`
+	Engine            string                                `json:"engine,omitempty"`
+	ConfigHash        string                                `json:"configHash,omitempty"`
+	Run               *store.StudyPipelineRunRecord         `json:"run,omitempty"`
+	ArtifactRefs      []store.StudyPipelineArtifactRef      `json:"artifactRefs,omitempty"`
+	CurationChecklist *store.StudyPipelineCurationChecklist `json:"curationChecklist,omitempty"`
+	ElementDecisions  []store.StudyPipelineElementDecision  `json:"elementDecisions,omitempty"`
+	Summary           StudyPipelineSummary                  `json:"summary"`
+	Materials         []StudyPipelineMaterial               `json:"materials"`
+	TaskLinks         []StudyPipelineTaskLink               `json:"taskLinks"`
+	MissingSolutions  []StudyPipelineMaterial               `json:"missingSolutions"`
 }
 
 type StudyPipelineRunsResponse struct {
@@ -139,8 +142,9 @@ type StudyPipelineModerationRequest struct {
 }
 
 type StudyPipelineStageRequest struct {
-	Engine     string `json:"engine,omitempty"`
-	ConfigHash string `json:"configHash,omitempty"`
+	Engine      string   `json:"engine,omitempty"`
+	ConfigHash  string   `json:"configHash,omitempty"`
+	ResourceIDs []string `json:"resourceIds,omitempty"`
 }
 
 type StudyPipelineSelectRunResponse struct {

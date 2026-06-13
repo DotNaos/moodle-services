@@ -115,6 +115,7 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 	if root == "" {
 		root = ArtifactRootFromEnv()
 	}
+	var accountability curatedAccountabilityReport
 
 	switch stage {
 	case "inventory":
@@ -157,6 +158,12 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 		if err := writeCurated(root, courseID, resources, now); err != nil {
 			return contract.StudyPipelineResponse{}, err
 		}
+		plan := Build(courseID, resources, "curated", now)
+		var err error
+		accountability, err = buildCuratedAccountability(root, courseID, resources, plan.Materials, now)
+		if err != nil {
+			return contract.StudyPipelineResponse{}, err
+		}
 	default:
 		return contract.StudyPipelineResponse{}, fmt.Errorf("unknown study pipeline stage %q", stage)
 	}
@@ -166,6 +173,11 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 	response.ArtifactRoot = CourseArtifactRoot(root, courseID)
 	response.Engine = runEngine(stage, options.Engine)
 	response.ConfigHash = runConfigHash(stage, response.Engine, options.ConfigHash)
+	if stage == "curated" {
+		response.ArtifactRefs = accountability.ArtifactRefs
+		response.CurationChecklist = accountability.Checklist
+		response.ElementDecisions = accountability.ElementDecisions
+	}
 	return response, nil
 }
 

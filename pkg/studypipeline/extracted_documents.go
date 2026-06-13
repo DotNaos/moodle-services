@@ -2,6 +2,7 @@ package studypipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
@@ -42,6 +43,11 @@ func LoadExtractedDocuments(courseID string, resources []moodle.Resource, option
 	if root == "" {
 		root = ArtifactRootFromEnv()
 	}
+	if cached, ok, err := readLatestExtractedDocuments(root, courseID); err != nil {
+		return contract.ExtractedDocumentsResponse{}, err
+	} else if ok {
+		return cached, nil
+	}
 	if !hasExtractedArtifacts(root, courseID) {
 		if err := writeRaw(root, courseID, resources, options.Downloader); err != nil {
 			return contract.ExtractedDocumentsResponse{}, err
@@ -51,6 +57,22 @@ func LoadExtractedDocuments(courseID string, resources []moodle.Resource, option
 		}
 	}
 	return writeExtractedDocumentRun(root, courseID, resources, now)
+}
+
+func readLatestExtractedDocuments(root string, courseID string) (contract.ExtractedDocumentsResponse, bool, error) {
+	path := filepath.Join(courseDir(root, courseID), "extracted", "latest-documents.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return contract.ExtractedDocumentsResponse{}, false, nil
+		}
+		return contract.ExtractedDocumentsResponse{}, false, err
+	}
+	var response contract.ExtractedDocumentsResponse
+	if err := json.Unmarshal(data, &response); err != nil {
+		return contract.ExtractedDocumentsResponse{}, false, err
+	}
+	return response, true, nil
 }
 
 func OpenExtractedAsset(courseID string, assetPath string, options RunOptions) ([]byte, string, error) {

@@ -29,16 +29,22 @@ func recordLocalStudyPipeline(ctx context.Context, response *contract.StudyPipel
 	if err != nil {
 		return err
 	}
+	status, runError := studyPipelineRunOutcome(response)
 	run, err := st.RecordStudyPipeline(ctx, store.StudyPipelineRecordInput{
-		UserID:       userID,
-		CourseID:     response.CourseID,
-		Stage:        response.Stage,
-		Engine:       response.Engine,
-		ConfigHash:   response.ConfigHash,
-		ArtifactRoot: response.ArtifactRoot,
-		Summary:      response.Summary,
-		Materials:    studyPipelineMaterialRecords(response.Materials),
-		TaskLinks:    studyPipelineTaskLinkRecords(response.TaskLinks),
+		UserID:            userID,
+		CourseID:          response.CourseID,
+		Stage:             response.Stage,
+		Engine:            response.Engine,
+		ConfigHash:        response.ConfigHash,
+		ArtifactRoot:      response.ArtifactRoot,
+		Status:            status,
+		Error:             runError,
+		ArtifactRefs:      response.ArtifactRefs,
+		CurationChecklist: response.CurationChecklist,
+		ElementDecisions:  response.ElementDecisions,
+		Summary:           response.Summary,
+		Materials:         studyPipelineMaterialRecords(response.Materials),
+		TaskLinks:         studyPipelineTaskLinkRecords(response.TaskLinks),
 	})
 	if err != nil {
 		return err
@@ -47,6 +53,22 @@ func recordLocalStudyPipeline(ctx context.Context, response *contract.StudyPipel
 		response.Run = &run
 	}
 	return nil
+}
+
+func studyPipelineRunOutcome(response *contract.StudyPipelineResponse) (string, string) {
+	if response == nil || response.CurationChecklist == nil {
+		return "succeeded", ""
+	}
+	for _, decision := range response.ElementDecisions {
+		switch strings.TrimSpace(decision.Outcome) {
+		case "needs_review", "failed":
+			return "failed", "element accountability incomplete"
+		}
+	}
+	if strings.TrimSpace(response.CurationChecklist.Status) != "complete" {
+		return "failed", "curation checklist incomplete"
+	}
+	return "succeeded", ""
 }
 
 func recordLocalStudyPipelineFailure(ctx context.Context, courseID string, stage string, options studypipeline.RunOptions, err error) error {
