@@ -3,6 +3,7 @@ package studypipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -205,6 +206,35 @@ func TestLoadExtractedDocumentsBuildsRenderableStructure(t *testing.T) {
 	latestPath := filepath.Join(root, "courses", courseID, "extracted", "latest-documents.json")
 	if _, err := os.Stat(latestPath); err != nil {
 		t.Fatalf("expected latest document structure to be written: %v", err)
+	}
+}
+
+func TestOpenExtractedAssetServesOnlyCourseArtifacts(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	assetPath := filepath.Join(root, "courses", courseID, "extracted", "runs", "run-1", "assets", "page.png")
+	if err := os.MkdirAll(filepath.Dir(assetPath), 0o755); err != nil {
+		t.Fatalf("mkdir asset dir: %v", err)
+	}
+	if err := os.WriteFile(assetPath, []byte{0x89, 0x50, 0x4e, 0x47}, 0o644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+
+	data, contentType, err := OpenExtractedAsset(courseID, assetPath, RunOptions{Root: root})
+	if err != nil {
+		t.Fatalf("OpenExtractedAsset: %v", err)
+	}
+	if string(data) != string([]byte{0x89, 0x50, 0x4e, 0x47}) || !strings.Contains(contentType, "image/png") {
+		t.Fatalf("unexpected asset response data=%v contentType=%q", data, contentType)
+	}
+
+	outsidePath := filepath.Join(root, "other-course.png")
+	if err := os.WriteFile(outsidePath, []byte("nope"), 0o644); err != nil {
+		t.Fatalf("write outside asset: %v", err)
+	}
+	_, _, err = OpenExtractedAsset(courseID, outsidePath, RunOptions{Root: root})
+	if !errors.Is(err, ErrInvalidExtractedAssetPath) {
+		t.Fatalf("expected invalid asset path, got %v", err)
 	}
 }
 

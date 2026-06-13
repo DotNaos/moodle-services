@@ -77,6 +77,7 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses/{courseID}/study-pipeline/status", studyPipelineStatusRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/inventory", studyPipelineInventoryRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/extracted-documents", studyPipelineExtractedDocumentsRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/extracted-asset", studyPipelineExtractedAssetRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/script", studyPipelineScriptRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/task-view", studyPipelineTaskViewRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/runs", studyPipelineRunsRoute(opts))
@@ -231,6 +232,26 @@ func studyPipelineInventoryRoute(opts ServerOptions) http.HandlerFunc {
 
 func studyPipelineExtractedDocumentsRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineReadRoute(opts, "extracted-documents")
+}
+
+func studyPipelineExtractedAssetRoute(opts ServerOptions) http.HandlerFunc {
+	localHandler := studyPipelineExtractedAssetHandler(opts)
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": "extracted-asset",
+	}, map[string]string{
+		"courseID": "courseId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
+		localHandler(w, r)
+	}
 }
 
 func studyPipelineTaskViewRoute(opts ServerOptions) http.HandlerFunc {
@@ -463,6 +484,30 @@ func studyPipelineReadHandler(opts ServerOptions, action string) http.HandlerFun
 		default:
 			writeError(w, http.StatusNotFound, fmt.Errorf("unknown study pipeline action %q", action))
 		}
+	}
+}
+
+func studyPipelineExtractedAssetHandler(opts ServerOptions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		courseID, _, _, ok := studyPipelineContext(w, r, opts)
+		if !ok {
+			return
+		}
+		data, contentType, err := studypipeline.OpenExtractedAsset(courseID, r.URL.Query().Get("path"), studypipeline.RunOptions{Now: time.Now()})
+		if err != nil {
+			switch {
+			case errors.Is(err, studypipeline.ErrInvalidExtractedAssetPath):
+				writeError(w, http.StatusBadRequest, err)
+			case errors.Is(err, studypipeline.ErrExtractedAssetNotFound):
+				writeError(w, http.StatusNotFound, err)
+			default:
+				writeError(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "private, max-age=3600")
+		_, _ = w.Write(data)
 	}
 }
 

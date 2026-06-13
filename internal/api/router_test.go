@@ -7,6 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -161,6 +164,42 @@ func TestStudyPipelineExtractedDocumentsRouteBuildsStructure(t *testing.T) {
 	}
 	if payload.Documents[0].Pages[0].Blocks[0].Type != "heading" {
 		t.Fatalf("expected placeholder heading block, got %#v", payload.Documents[0].Pages[0].Blocks)
+	}
+}
+
+func TestStudyPipelineExtractedAssetRouteServesCourseAsset(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(studypipeline.EnvArtifactRoot, root)
+	assetPath := filepath.Join(root, "courses", "22584", "extracted", "runs", "run-1", "assets", "page.png")
+	if err := os.MkdirAll(filepath.Dir(assetPath), 0o755); err != nil {
+		t.Fatalf("mkdir asset dir: %v", err)
+	}
+	if err := os.WriteFile(assetPath, []byte{0x89, 0x50, 0x4e, 0x47}, 0o644); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{
+				resources: map[string][]moodle.Resource{"22584": nil},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/courses/22584/study-pipeline/extracted-asset?path="+url.QueryEscape(assetPath), nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "image/png") {
+		t.Fatalf("expected image/png content type, got %q", got)
+	}
+	if rec.Body.String() != string([]byte{0x89, 0x50, 0x4e, 0x47}) {
+		t.Fatalf("unexpected body: %v", rec.Body.Bytes())
 	}
 }
 

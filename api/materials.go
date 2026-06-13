@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -167,6 +168,26 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			return
 		}
 		svc.WriteJSON(w, http.StatusOK, documents)
+	case "extracted-asset":
+		if r.Method != http.MethodGet {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		data, contentType, err := studypipeline.OpenExtractedAsset(courseID, r.URL.Query().Get("path"), options)
+		if err != nil {
+			switch {
+			case errors.Is(err, studypipeline.ErrInvalidExtractedAssetPath):
+				svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			case errors.Is(err, studypipeline.ErrExtractedAssetNotFound):
+				svc.WriteJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			default:
+				svc.WriteError(w, err)
+			}
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "private, max-age=3600")
+		_, _ = w.Write(data)
 	case "script":
 		script, err := studypipeline.LoadScript(courseID, materials, options)
 		if err != nil {
