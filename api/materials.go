@@ -148,6 +148,96 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			return
 		}
 		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineSelectRunResponse{Selection: selection})
+	case "review":
+		if r.Method != http.MethodGet {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		feedback, proposals, err := studyStore.ListStudyPipelineReview(r.Context(), courseID)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineReviewResponse{
+			CourseID:  courseID,
+			Feedback:  feedback,
+			Proposals: proposals,
+		})
+	case "feedback":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if studyStore == nil {
+			svc.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "pipeline review storage is not configured"})
+			return
+		}
+		var input contract.StudyPipelineFeedbackRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		feedback, err := studyStore.RecordStudyPipelineFeedback(r.Context(), studyUserID, courseID, svc.StudyPipelineFeedbackInput{
+			TargetID:         input.TargetID,
+			TargetKind:       input.TargetKind,
+			FeedbackType:     input.FeedbackType,
+			Message:          input.Message,
+			SourceRunID:      input.SourceRunID,
+			SourceArtifactID: input.SourceArtifactID,
+		})
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineFeedbackResponse{Feedback: feedback})
+	case "proposals":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if studyStore == nil {
+			svc.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "pipeline review storage is not configured"})
+			return
+		}
+		var input contract.StudyPipelineProposalRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		proposal, err := studyStore.RecordStudyPipelineProposal(r.Context(), studyUserID, courseID, svc.StudyPipelineProposalInput{
+			TargetID:         input.TargetID,
+			TargetKind:       input.TargetKind,
+			Title:            input.Title,
+			ContentPreview:   input.ContentPreview,
+			SourceRunID:      input.SourceRunID,
+			SourceArtifactID: input.SourceArtifactID,
+			Model:            input.Model,
+		})
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineProposalResponse{Proposal: proposal})
+	case "submit-proposal":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if studyStore == nil {
+			svc.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "pipeline review storage is not configured"})
+			return
+		}
+		proposalID := strings.TrimSpace(r.URL.Query().Get("proposalId"))
+		if proposalID == "" {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "proposalId query parameter is required"})
+			return
+		}
+		proposal, err := studyStore.SubmitStudyPipelineProposal(r.Context(), studyUserID, courseID, proposalID)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineProposalResponse{Proposal: proposal})
 	case "inventory":
 		if r.Method != http.MethodGet {
 			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -222,8 +312,47 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 		if strings.Contains(r.Header.Get("Accept"), "application/x-ndjson") {
 			w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-store")
-			w.WriteHeader(http.StatusNotImplemented)
-			_, _ = w.Write([]byte(`{"type":"error","error":"streaming refinement is available on the API server router"}` + "\n"))
+			w.WriteHeader(http.StatusOK)
+			flusher, _ := w.(http.Flusher)
+			encoder := json.NewEncoder(w)
+			emit := func(event contract.StudyPipelineRefineEvent) {
+				_ = encoder.Encode(event)
+				if flusher != nil {
+					flusher.Flush()
+				}
+			}
+			emit(contract.StudyPipelineRefineEvent{
+				Type:            "queued",
+				Message:         "Queued Codex refinement on the server.",
+				Model:           strings.TrimSpace(input.Model),
+				ReasoningEffort: strings.TrimSpace(input.ReasoningEffort),
+			})
+			options.UserID = studyUserID
+			options.RefineEvent = emit
+			response, err := studypipeline.RefineContent(r.Context(), courseID, materials, input, options)
+			if err != nil {
+				emit(contract.StudyPipelineRefineEvent{
+					Type:  "error",
+					Error: err.Error(),
+				})
+				return
+			}
+			if studyStore != nil {
+				_, _ = studyStore.RecordStudyPipelineProposal(r.Context(), studyUserID, courseID, svc.StudyPipelineProposalInput{
+					TargetID:       response.Target.ID,
+					TargetKind:     response.Target.Kind,
+					Title:          response.Target.Title,
+					ContentPreview: response.ContentPreview,
+					Model:          response.Target.Model,
+				})
+			}
+			target := response.Target
+			emit(contract.StudyPipelineRefineEvent{
+				Type:           "done",
+				Message:        "Codex refinement finished.",
+				Target:         &target,
+				ContentPreview: response.ContentPreview,
+			})
 			return
 		}
 		options.UserID = studyUserID
@@ -231,6 +360,15 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 		if err != nil {
 			svc.WriteError(w, err)
 			return
+		}
+		if studyStore != nil {
+			_, _ = studyStore.RecordStudyPipelineProposal(r.Context(), studyUserID, courseID, svc.StudyPipelineProposalInput{
+				TargetID:       response.Target.ID,
+				TargetKind:     response.Target.Kind,
+				Title:          response.Target.Title,
+				ContentPreview: response.ContentPreview,
+				Model:          response.Target.Model,
+			})
 		}
 		svc.WriteJSON(w, http.StatusOK, response)
 	case "chat":

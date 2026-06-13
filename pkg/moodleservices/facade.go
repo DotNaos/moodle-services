@@ -56,7 +56,11 @@ type (
 	Store                             = store.Store
 	ActiveRunSelectionRecord          = store.ActiveRunSelectionRecord
 	StudyPipelineArtifactRef          = store.StudyPipelineArtifactRef
+	StudyPipelineFeedbackInput        = store.StudyPipelineFeedbackInput
+	StudyPipelineFeedbackRecord       = store.StudyPipelineFeedbackRecord
 	StudyPipelineMaterialRecord       = store.StudyPipelineMaterialRecord
+	StudyPipelineProposalInput        = store.StudyPipelineProposalInput
+	StudyPipelineProposalRecord       = store.StudyPipelineProposalRecord
 	StudyPipelineRecordInput          = store.StudyPipelineRecordInput
 	StudyPipelineRunRecord            = store.StudyPipelineRunRecord
 	StudyPipelineTaskLinkRecord       = store.StudyPipelineTaskLinkRecord

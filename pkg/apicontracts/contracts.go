@@ -143,6 +143,39 @@ type StudyPipelineSelectRunResponse struct {
 	Selection store.ActiveRunSelectionRecord `json:"selection"`
 }
 
+type StudyPipelineFeedbackRequest struct {
+	TargetID         string `json:"targetId"`
+	TargetKind       string `json:"targetKind"`
+	FeedbackType     string `json:"feedbackType"`
+	Message          string `json:"message,omitempty"`
+	SourceRunID      string `json:"sourceRunId,omitempty"`
+	SourceArtifactID string `json:"sourceArtifactId,omitempty"`
+}
+
+type StudyPipelineFeedbackResponse struct {
+	Feedback store.StudyPipelineFeedbackRecord `json:"feedback"`
+}
+
+type StudyPipelineProposalRequest struct {
+	TargetID         string `json:"targetId"`
+	TargetKind       string `json:"targetKind"`
+	Title            string `json:"title,omitempty"`
+	ContentPreview   string `json:"contentPreview,omitempty"`
+	SourceRunID      string `json:"sourceRunId,omitempty"`
+	SourceArtifactID string `json:"sourceArtifactId,omitempty"`
+	Model            string `json:"model,omitempty"`
+}
+
+type StudyPipelineProposalResponse struct {
+	Proposal store.StudyPipelineProposalRecord `json:"proposal"`
+}
+
+type StudyPipelineReviewResponse struct {
+	CourseID  string                              `json:"courseId"`
+	Feedback  []store.StudyPipelineFeedbackRecord `json:"feedback"`
+	Proposals []store.StudyPipelineProposalRecord `json:"proposals"`
+}
+
 type StudyPipelineSummary struct {
 	TotalResources   int `json:"totalResources"`
 	Slides           int `json:"slides"`

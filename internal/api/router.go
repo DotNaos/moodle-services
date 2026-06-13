@@ -82,6 +82,10 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses/{courseID}/study-pipeline/task-view", studyPipelineTaskViewRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/runs", studyPipelineRunsRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/runs/{runID}/select", studyPipelineSelectRunRoute(opts))
+	router.Get("/api/courses/{courseID}/study-pipeline/review", studyPipelineReviewRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/feedback", studyPipelineFeedbackRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/proposals", studyPipelineProposalsRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/proposals/{proposalID}/submit", studyPipelineSubmitProposalRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/refine", studyPipelineRefineRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
@@ -264,6 +268,38 @@ func studyPipelineRunsRoute(opts ServerOptions) http.HandlerFunc {
 
 func studyPipelineSelectRunRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineRunStateRoute(opts, "select-run")
+}
+
+func studyPipelineReviewRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "review")
+}
+
+func studyPipelineFeedbackRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "feedback")
+}
+
+func studyPipelineProposalsRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "proposals")
+}
+
+func studyPipelineSubmitProposalRoute(opts ServerOptions) http.HandlerFunc {
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": "submit-proposal",
+	}, map[string]string{
+		"courseID":   "courseId",
+		"proposalID": "proposalId",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
+		writeError(w, http.StatusUnauthorized, fmt.Errorf("authentication required"))
+	}
 }
 
 func studyPipelineRefineRoute(opts ServerOptions) http.HandlerFunc {
