@@ -33,6 +33,8 @@ func recordLocalStudyPipeline(ctx context.Context, response *contract.StudyPipel
 		UserID:       userID,
 		CourseID:     response.CourseID,
 		Stage:        response.Stage,
+		Engine:       response.Engine,
+		ConfigHash:   response.ConfigHash,
 		ArtifactRoot: response.ArtifactRoot,
 		Summary:      response.Summary,
 		Materials:    studyPipelineMaterialRecords(response.Materials),
@@ -47,7 +49,7 @@ func recordLocalStudyPipeline(ctx context.Context, response *contract.StudyPipel
 	return nil
 }
 
-func recordLocalStudyPipelineFailure(ctx context.Context, courseID string, stage string, err error) error {
+func recordLocalStudyPipelineFailure(ctx context.Context, courseID string, stage string, options studypipeline.RunOptions, err error) error {
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if databaseURL == "" || strings.TrimSpace(courseID) == "" {
 		return nil
@@ -67,6 +69,8 @@ func recordLocalStudyPipelineFailure(ctx context.Context, courseID string, stage
 		UserID:       userID,
 		CourseID:     courseID,
 		Stage:        defaultStudyPipelineStage(stage),
+		Engine:       options.Engine,
+		ConfigHash:   options.ConfigHash,
 		ArtifactRoot: studypipeline.CourseArtifactRoot("", courseID),
 		Status:       "failed",
 		Error:        errorMessage(err),

@@ -115,6 +115,8 @@ type StudyPipelineResponse struct {
 	Stage            string                        `json:"stage,omitempty"`
 	CreatedAt        string                        `json:"createdAt"`
 	ArtifactRoot     string                        `json:"artifactRoot,omitempty"`
+	Engine           string                        `json:"engine,omitempty"`
+	ConfigHash       string                        `json:"configHash,omitempty"`
 	Run              *store.StudyPipelineRunRecord `json:"run,omitempty"`
 	Summary          StudyPipelineSummary          `json:"summary"`
 	Materials        []StudyPipelineMaterial       `json:"materials"`
@@ -130,6 +132,11 @@ type StudyPipelineRunsResponse struct {
 
 type StudyPipelineSelectRunRequest struct {
 	Reason string `json:"reason,omitempty"`
+}
+
+type StudyPipelineStageRequest struct {
+	Engine     string `json:"engine,omitempty"`
+	ConfigHash string `json:"configHash,omitempty"`
 }
 
 type StudyPipelineSelectRunResponse struct {

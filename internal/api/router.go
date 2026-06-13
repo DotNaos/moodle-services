@@ -424,12 +424,14 @@ func studyPipelineStageHandler(opts ServerOptions, fallbackStage string) http.Ha
 		if stage == "" {
 			stage = fallbackStage
 		}
-		response, err := studypipeline.RunStage(courseID, resources, stage, studypipeline.RunOptions{
+		options := studypipeline.RunOptions{
 			Downloader: downloader,
 			Now:        time.Now(),
-		})
+		}
+		applyLocalStageRequestOptions(r, &options)
+		response, err := studypipeline.RunStage(courseID, resources, stage, options)
 		if err != nil {
-			if recordErr := recordLocalStudyPipelineFailure(r.Context(), courseID, stage, err); recordErr != nil {
+			if recordErr := recordLocalStudyPipelineFailure(r.Context(), courseID, stage, options, err); recordErr != nil {
 				writeError(w, http.StatusInternalServerError, recordErr)
 				return
 			}
@@ -442,6 +444,18 @@ func studyPipelineStageHandler(opts ServerOptions, fallbackStage string) http.Ha
 		}
 		writeJSON(w, http.StatusOK, response)
 	}
+}
+
+func applyLocalStageRequestOptions(r *http.Request, options *studypipeline.RunOptions) {
+	if r.Body == nil {
+		return
+	}
+	var input contract.StudyPipelineStageRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		return
+	}
+	options.Engine = input.Engine
+	options.ConfigHash = input.ConfigHash
 }
 
 func studyPipelineReadHandler(opts ServerOptions, action string) http.HandlerFunc {

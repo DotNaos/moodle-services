@@ -38,6 +38,8 @@ type RunOptions struct {
 	Now         time.Time
 	Downloader  Downloader
 	UserID      string
+	Engine      string
+	ConfigHash  string
 	Refiner     ContentRefiner
 	RefineEvent func(contract.StudyPipelineRefineEvent)
 }
@@ -162,6 +164,8 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 	response := Build(courseID, resources, stage+"-ready", now)
 	response.Stage = stage
 	response.ArtifactRoot = CourseArtifactRoot(root, courseID)
+	response.Engine = runEngine(stage, options.Engine)
+	response.ConfigHash = runConfigHash(stage, response.Engine, options.ConfigHash)
 	return response, nil
 }
 
@@ -1728,6 +1732,35 @@ func writeJSONFile(path string, value any) error {
 func hashBytes(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func runEngine(stage string, engine string) string {
+	engine = strings.TrimSpace(strings.ToLower(engine))
+	if engine != "" {
+		return engine
+	}
+	switch strings.TrimSpace(stage) {
+	case "raw", "inventory":
+		return "moodle_api"
+	case "extracted":
+		return extractedDocumentEngine
+	case "curated":
+		return "codex"
+	default:
+		return "unknown"
+	}
+}
+
+func runConfigHash(stage string, engine string, configHash string) string {
+	configHash = strings.TrimSpace(configHash)
+	if configHash != "" {
+		return configHash
+	}
+	engine = strings.TrimSpace(engine)
+	if engine == "" {
+		engine = runEngine(stage, "")
+	}
+	return "config:" + strings.TrimSpace(stage) + ":" + engine + ":default"
 }
 
 func sortedResources(resources []moodle.Resource) []moodle.Resource {

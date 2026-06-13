@@ -300,6 +300,23 @@ func TestCuratedStageDoesNotDownloadRawMaterials(t *testing.T) {
 	}
 }
 
+func TestRunStageCarriesRequestedEngineMetadata(t *testing.T) {
+	response, err := RunStage("22584", []moodle.Resource{
+		{ID: "1", Name: "Aufgabenblatt 01", FileType: "pdf"},
+	}, "extracted", RunOptions{
+		Root:       t.TempDir(),
+		Now:        time.Unix(0, 0),
+		Engine:     "marker",
+		ConfigHash: "config:extracted:marker:layout-v1",
+	})
+	if err != nil {
+		t.Fatalf("RunStage extracted: %v", err)
+	}
+	if response.Engine != "marker" || response.ConfigHash != "config:extracted:marker:layout-v1" {
+		t.Fatalf("unexpected run metadata engine=%q config=%q", response.Engine, response.ConfigHash)
+	}
+}
+
 type failingDownloader struct{}
 
 func (failingDownloader) DownloadFileToBuffer(string) (moodle.DownloadResult, error) {

@@ -68,10 +68,11 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 	switch action {
 	case "", "status":
 		if r.Method != http.MethodGet {
+			applyStageRequestOptions(r, &options)
 			stage = defaultStage(stage)
 			response, err := studypipeline.RunStage(courseID, materials, stage, options)
 			if err != nil {
-				if recordErr := recordStudyPipelineFailure(r.Context(), studyStore, studyUserID, courseID, stage, err); recordErr != nil {
+				if recordErr := recordStudyPipelineFailure(r.Context(), studyStore, studyUserID, courseID, stage, options, err); recordErr != nil {
 					svc.WriteError(w, recordErr)
 					return
 				}
@@ -93,9 +94,10 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
+		applyStageRequestOptions(r, &options)
 		response, err := studypipeline.RunStage(courseID, materials, defaultStage(stage), options)
 		if err != nil {
-			if recordErr := recordStudyPipelineFailure(r.Context(), studyStore, studyUserID, courseID, defaultStage(stage), err); recordErr != nil {
+			if recordErr := recordStudyPipelineFailure(r.Context(), studyStore, studyUserID, courseID, defaultStage(stage), options, err); recordErr != nil {
 				svc.WriteError(w, recordErr)
 				return
 			}
@@ -293,6 +295,18 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 	}
 }
 
+func applyStageRequestOptions(r *http.Request, options *studypipeline.RunOptions) {
+	if r.Body == nil {
+		return
+	}
+	var input contract.StudyPipelineStageRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		return
+	}
+	options.Engine = input.Engine
+	options.ConfigHash = input.ConfigHash
+}
+
 func defaultStage(stage string) string {
 	if strings.TrimSpace(stage) == "" {
 		return "curated"
@@ -300,7 +314,7 @@ func defaultStage(stage string) string {
 	return strings.TrimSpace(stage)
 }
 
-func recordStudyPipelineFailure(ctx context.Context, st *svc.Store, userID string, courseID string, stage string, runErr error) error {
+func recordStudyPipelineFailure(ctx context.Context, st *svc.Store, userID string, courseID string, stage string, options studypipeline.RunOptions, runErr error) error {
 	if st == nil || strings.TrimSpace(userID) == "" || strings.TrimSpace(courseID) == "" {
 		return nil
 	}
@@ -309,6 +323,8 @@ func recordStudyPipelineFailure(ctx context.Context, st *svc.Store, userID strin
 		UserID:       userID,
 		CourseID:     courseID,
 		Stage:        defaultStage(stage),
+		Engine:       options.Engine,
+		ConfigHash:   options.ConfigHash,
 		ArtifactRoot: studypipeline.CourseArtifactRoot("", courseID),
 		Status:       "failed",
 		Error:        errorMessage(runErr),
