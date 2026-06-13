@@ -1,0 +1,113 @@
+package studypipeline
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/DotNaos/moodle-services/internal/moodle"
+	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
+)
+
+func TestCuratedStageWritesElementAccountabilityAndBlocksUnhandledImages(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	now := time.Date(2026, 6, 13, 15, 18, 39, 0, time.UTC)
+	resources := []moodle.Resource{
+		{ID: "947711", Name: "Aufgabenblatt 01", FileType: "pdf", SectionName: "Week 1"},
+	}
+	writeExtractedFixture(t, root, courseID, "tasks", "947711-Aufgabenblatt 01", "Aufgabe 1\n\nDie Schönauer-Vektortriade")
+	writeLatestExtractedDocumentFixture(t, root, courseID, contract.ExtractedDocumentsResponse{
+		CourseID:     courseID,
+		RunID:        "baseline-20260613T151839Z",
+		GeneratedAt:  now.Format(time.RFC3339),
+		Engine:       extractedDocumentEngine,
+		ArtifactRoot: filepath.Join(root, "courses", courseID),
+		Documents: []contract.PDFDocument{{
+			ID: "947711",
+			Resource: contract.StudyPipelineMaterial{
+				ID:       "947711",
+				Name:     "Aufgabenblatt 01",
+				Type:     "task",
+				FileType: "pdf",
+			},
+			RunID:  "baseline-20260613T151839Z",
+			Engine: extractedDocumentEngine,
+			Status: "machine-extracted",
+			Pages: []contract.PDFPage{{
+				ID:             "947711-page-001",
+				PageNumber:     1,
+				Text:           "Aufgabe 1\n\nDie Schönauer-Vektortriade",
+				Markdown:       "Aufgabe 1\n\nDie Schönauer-Vektortriade",
+				PreviewAssetID: "page-001-preview",
+				Blocks: []contract.DocumentBlock{{
+					ID:         "947711-p001-b001",
+					PageNumber: 1,
+					Type:       "paragraph",
+					Label:      "task_paragraph",
+					Text:       "Die Schönauer-Vektortriade",
+					Markdown:   "Die Schönauer-Vektortriade",
+					Source:     "extracted_text",
+					Confidence: "high",
+				}},
+			}},
+			Assets: []contract.DocumentAsset{
+				{
+					ID:         "page-001-preview",
+					Kind:       "page_preview",
+					Path:       filepath.Join(root, "courses", courseID, "extracted", "runs", "baseline-20260613T151839Z", "assets", "947711", "pages", "page-1.png"),
+					PageNumber: 1,
+					MimeType:   "image/png",
+					Role:       "page_preview",
+				},
+				{
+					ID:       "embedded-image-001",
+					Kind:     "embedded_image",
+					Path:     filepath.Join(root, "courses", courseID, "extracted", "runs", "baseline-20260613T151839Z", "assets", "947711", "images", "image-000.png"),
+					MimeType: "image/png",
+					Role:     "extracted_image",
+				},
+			},
+		}},
+	})
+
+	response, err := RunStage(courseID, resources, "curated", RunOptions{
+		Root: root,
+		Now:  now,
+	})
+	if err != nil {
+		t.Fatalf("RunStage curated: %v", err)
+	}
+	if response.CurationChecklist == nil || response.CurationChecklist.Status != "incomplete" {
+		t.Fatalf("expected incomplete checklist, got %#v", response.CurationChecklist)
+	}
+	if len(response.ElementDecisions) != 2 {
+		t.Fatalf("expected text and image decisions, got %#v", response.ElementDecisions)
+	}
+	if response.ElementDecisions[0].Outcome != "used_in_output" {
+		t.Fatalf("expected text block to be used, got %#v", response.ElementDecisions[0])
+	}
+	imageDecision := response.ElementDecisions[1]
+	if imageDecision.SourceAssetID != "embedded-image-001" || imageDecision.Outcome != "needs_review" {
+		t.Fatalf("expected unreferenced image to need review, got %#v", imageDecision)
+	}
+	if len(response.ArtifactRefs) < 4 {
+		t.Fatalf("expected page render, manifest, checklist, and preview refs, got %#v", response.ArtifactRefs)
+	}
+	manifestPath := filepath.Join(root, "courses", courseID, "curated", "accountability", "curated-20260613T151839Z", "element-accountability.json")
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("expected accountability manifest: %v", err)
+	}
+}
+
+func writeLatestExtractedDocumentFixture(t *testing.T, root string, courseID string, response contract.ExtractedDocumentsResponse) {
+	t.Helper()
+	path := filepath.Join(root, "courses", safeSegment(courseID), "extracted", "latest-documents.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir latest extracted fixture: %v", err)
+	}
+	if err := writeJSONFile(path, response); err != nil {
+		t.Fatalf("write latest extracted fixture: %v", err)
+	}
+}

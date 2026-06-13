@@ -69,9 +69,9 @@ func TestListStudyPipelineRunsKeepsOldFailedStaleAndUserOwnedRuns(t *testing.T) 
 	now := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
 
 	runRows := sqlmock.NewRows(studyPipelineRunColumns()).
-		AddRow("22222222-2222-2222-2222-222222222222", "source:moodle-course:22584", "22584", "", "sha256:new", "extracted", "docling", "config:docling:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/new", "", now, now, now, `[{"id":"artifact:new","kind":"ocr_text"}]`).
-		AddRow("11111111-1111-1111-1111-111111111111", "source:moodle-course:22584", "22584", "", "sha256:old", "extracted", "pdftotext", "config:pdftotext:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "stale", "/srv/old", "", now, now, now.Add(-time.Minute), `[]`).
-		AddRow("33333333-3333-3333-3333-333333333333", "source:moodle-course:22584", "22584", "947711", "sha256:user", "curated", "codex", "config:codex:user", "user_owned", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "failed", "/srv/user", "codex failed", now, now, now.Add(-2*time.Minute), `[]`)
+		AddRow("22222222-2222-2222-2222-222222222222", "source:moodle-course:22584", "22584", "", "sha256:new", "extracted", "docling", "config:docling:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/new", "", now, now, now, `[{"id":"artifact:new","kind":"ocr_text"}]`, ``, `[]`).
+		AddRow("11111111-1111-1111-1111-111111111111", "source:moodle-course:22584", "22584", "", "sha256:old", "extracted", "pdftotext", "config:pdftotext:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "stale", "/srv/old", "", now, now, now.Add(-time.Minute), `[]`, ``, `[]`).
+		AddRow("33333333-3333-3333-3333-333333333333", "source:moodle-course:22584", "22584", "947711", "sha256:user", "curated", "codex", "config:codex:user", "user_owned", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "failed", "/srv/user", "codex failed", now, now, now.Add(-2*time.Minute), `[]`, `{"status":"incomplete","items":[]}`, `[{"outcome":"needs_review"}]`)
 	mock.ExpectQuery(regexp.QuoteMeta("from study_pipeline_runs")).
 		WithArgs("22584", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").
 		WillReturnRows(runRows)
@@ -110,7 +110,7 @@ func TestSelectActiveStudyPipelineRunCanPointBackToOldRun(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("from study_pipeline_runs")).
 		WithArgs("11111111-1111-1111-1111-111111111111", "22584", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").
 		WillReturnRows(sqlmock.NewRows(studyPipelineRunColumns()).
-			AddRow("11111111-1111-1111-1111-111111111111", "source:moodle-course:22584", "22584", "", "sha256:old", "extracted", "pdftotext", "config:pdftotext:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/old", "", now, now, now, `[]`))
+			AddRow("11111111-1111-1111-1111-111111111111", "source:moodle-course:22584", "22584", "", "sha256:old", "extracted", "pdftotext", "config:pdftotext:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/old", "", now, now, now, `[]`, ``, `[]`))
 	mock.ExpectBegin()
 	mock.ExpectExec(regexp.QuoteMeta("insert into active_run_selections")).
 		WithArgs("source:moodle-course:22584", "", "extracted", "11111111-1111-1111-1111-111111111111", uuidArg("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "compare OCR engines").
@@ -141,7 +141,7 @@ func TestPublishStudyPipelineRunSelectsActiveRunAndAudits(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("from study_pipeline_runs")).
 		WithArgs("11111111-1111-1111-1111-111111111111", "22584", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").
 		WillReturnRows(sqlmock.NewRows(studyPipelineRunColumns()).
-			AddRow("11111111-1111-1111-1111-111111111111", "source:moodle-course:22584", "22584", "", "sha256:old", "extracted", "pdftotext", "config:pdftotext:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/old", "", now, now, now, `[]`))
+			AddRow("11111111-1111-1111-1111-111111111111", "source:moodle-course:22584", "22584", "", "sha256:old", "extracted", "pdftotext", "config:pdftotext:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/old", "", now, now, now, `[]`, ``, `[]`))
 	mock.ExpectBegin()
 	mock.ExpectExec(regexp.QuoteMeta("insert into active_run_selections")).
 		WithArgs("source:moodle-course:22584", "", "extracted", "11111111-1111-1111-1111-111111111111", uuidArg("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "publish after review").
@@ -176,7 +176,7 @@ func TestUnpublishStudyPipelineRunClearsSelectionAndAudits(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("from study_pipeline_runs")).
 		WithArgs("11111111-1111-1111-1111-111111111111", "22584").
 		WillReturnRows(sqlmock.NewRows(studyPipelineRunColumns()).
-			AddRow("11111111-1111-1111-1111-111111111111", "source:moodle-course:22584", "22584", "", "sha256:old", "extracted", "pdftotext", "config:pdftotext:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/old", "", now, now, now, `[]`))
+			AddRow("11111111-1111-1111-1111-111111111111", "source:moodle-course:22584", "22584", "", "sha256:old", "extracted", "pdftotext", "config:pdftotext:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/old", "", now, now, now, `[]`, ``, `[]`))
 	mock.ExpectBegin()
 	mock.ExpectExec(regexp.QuoteMeta("delete from active_run_selections")).
 		WithArgs("source:moodle-course:22584", "", "extracted", "11111111-1111-1111-1111-111111111111").
@@ -204,7 +204,7 @@ func expectRecordRun(t *testing.T, mock sqlmock.Sqlmock, runID string, at time.T
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta("insert into study_pipeline_runs")).
 		WillReturnRows(sqlmock.NewRows(studyPipelineRunColumns()).
-			AddRow(runID, "source:moodle-course:22584", "22584", "", "", "extracted", "docling", "config:extracted:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/moodle-study/courses/22584", "", at, at, at, `[{"id":"artifact:summary:22584:extracted","kind":"course_summary","uri":"/srv/moodle-study/courses/22584"}]`))
+			AddRow(runID, "source:moodle-course:22584", "22584", "", "", "extracted", "docling", "config:extracted:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/moodle-study/courses/22584", "", at, at, at, `[{"id":"artifact:summary:22584:extracted","kind":"course_summary","uri":"/srv/moodle-study/courses/22584"}]`, ``, `[]`))
 	mock.ExpectExec(regexp.QuoteMeta("insert into active_run_selections")).
 		WithArgs("source:moodle-course:22584", "", "extracted", runID, uuidArg("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "latest successful run").
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -214,7 +214,7 @@ func expectRecordRun(t *testing.T, mock sqlmock.Sqlmock, runID string, at time.T
 func studyPipelineRunColumns() []string {
 	return []string{
 		"id", "source_id", "course_id", "resource_id", "file_hash", "stage", "engine", "config_hash",
-		"ownership", "created_by", "status", "artifact_root", "error", "started_at", "finished_at", "created_at", "artifact_refs",
+		"ownership", "created_by", "status", "artifact_root", "error", "started_at", "finished_at", "created_at", "artifact_refs", "curation_checklist", "element_decisions",
 	}
 }
 

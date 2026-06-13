@@ -68,6 +68,50 @@ course inventory        headings, paragraphs, images     Codex-cleaned output
 task groups             formulas, tables, lists          source-traced changes
 ```
 
+## PDF Element Accountability
+
+Every meaningful element detected in a PDF must receive an explicit final
+processing decision. This applies to text, images, figures, tables, formulas,
+charts, diagrams, captions, headers, footers, and any other detected page
+content.
+
+Allowed final outcomes are:
+
+- `used_in_output`: the element is represented in the final website output.
+- `ignored`: the element was intentionally discarded, such as a decorative
+  template logo.
+- `unsupported`: the element was detected but the current renderer cannot
+  faithfully represent it yet.
+- `failed`: processing was attempted and failed.
+- `needs_review`: the element has not yet received a final decision, so the
+  curated run must not be considered complete.
+
+The curated/Codex step must answer these questions for every detected element:
+
+- What kind of element is it?
+- Where did it come from in the PDF?
+- Was it represented in the final output?
+- If yes, where?
+- If no, why was it intentionally ignored?
+- If processing failed, what failed?
+
+Extraction alone is not enough. Page images, extracted blocks, embedded images,
+the generated task/script output, and the rendered preview must be tied together
+by a curation checklist and an element-accountability manifest.
+
+A curated run may only be considered successful when:
+
+- rendered page evidence is available,
+- extracted elements were reviewed,
+- every detected element has one explicit final outcome,
+- the layout was reconstructed or intentionally simplified,
+- a rendered website preview exists, and
+- source mapping from PDF element to output is complete.
+
+If any element remains `needs_review` or `failed`, the run is recorded as not
+publishable and the frontend must show the concrete unresolved elements instead
+of a generic missing-output warning.
+
 ## Server Storage Model
 
 Use Postgres for metadata and status. Use a blob/artifact store for large files.
