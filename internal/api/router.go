@@ -498,8 +498,14 @@ func studyPipelineStageHandler(opts ServerOptions, fallbackStage string) http.Ha
 			Downloader: downloader,
 			Now:        time.Now(),
 		}
-		applyLocalStageRequestOptions(r, &options)
-		response, err := studypipeline.RunStage(courseID, resources, stage, options)
+		input := readLocalStageRequestOptions(r)
+		applyLocalStageRequestOptions(input, &options)
+		filteredResources, ok := filterLocalStudyPipelineResources(resources, input.ResourceIDs)
+		if !ok {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no Moodle resources matched requested resourceIds"))
+			return
+		}
+		response, err := studypipeline.RunStage(courseID, filteredResources, stage, options)
 		if err != nil {
 			if recordErr := recordLocalStudyPipelineFailure(r.Context(), courseID, stage, options, err); recordErr != nil {
 				writeError(w, http.StatusInternalServerError, recordErr)
@@ -516,16 +522,39 @@ func studyPipelineStageHandler(opts ServerOptions, fallbackStage string) http.Ha
 	}
 }
 
-func applyLocalStageRequestOptions(r *http.Request, options *studypipeline.RunOptions) {
+func readLocalStageRequestOptions(r *http.Request) contract.StudyPipelineStageRequest {
 	if r.Body == nil {
-		return
+		return contract.StudyPipelineStageRequest{}
 	}
 	var input contract.StudyPipelineStageRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		return
+		return contract.StudyPipelineStageRequest{}
 	}
+	return input
+}
+
+func applyLocalStageRequestOptions(input contract.StudyPipelineStageRequest, options *studypipeline.RunOptions) {
 	options.Engine = input.Engine
 	options.ConfigHash = input.ConfigHash
+}
+
+func filterLocalStudyPipelineResources(resources []moodle.Resource, resourceIDs []string) ([]moodle.Resource, bool) {
+	wanted := map[string]struct{}{}
+	for _, id := range resourceIDs {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			wanted[trimmed] = struct{}{}
+		}
+	}
+	if len(wanted) == 0 {
+		return resources, true
+	}
+	filtered := make([]moodle.Resource, 0, len(wanted))
+	for _, resource := range resources {
+		if _, ok := wanted[resource.ID]; ok {
+			filtered = append(filtered, resource)
+		}
+	}
+	return filtered, len(filtered) > 0
 }
 
 func studyPipelineReadHandler(opts ServerOptions, action string) http.HandlerFunc {

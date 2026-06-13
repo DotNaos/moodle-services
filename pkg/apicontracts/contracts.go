@@ -142,8 +142,9 @@ type StudyPipelineModerationRequest struct {
 }
 
 type StudyPipelineStageRequest struct {
-	Engine     string `json:"engine,omitempty"`
-	ConfigHash string `json:"configHash,omitempty"`
+	Engine      string   `json:"engine,omitempty"`
+	ConfigHash  string   `json:"configHash,omitempty"`
+	ResourceIDs []string `json:"resourceIds,omitempty"`
 }
 
 type StudyPipelineSelectRunResponse struct {
