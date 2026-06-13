@@ -82,10 +82,16 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses/{courseID}/study-pipeline/task-view", studyPipelineTaskViewRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/runs", studyPipelineRunsRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/runs/{runID}/select", studyPipelineSelectRunRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/runs/{runID}/publish", studyPipelinePublishRunRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/runs/{runID}/unpublish", studyPipelineUnpublishRunRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/review", studyPipelineReviewRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/feedback", studyPipelineFeedbackRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/feedback/{feedbackID}/resolve", studyPipelineResolveFeedbackRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/feedback/{feedbackID}/dismiss", studyPipelineDismissFeedbackRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/proposals", studyPipelineProposalsRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/proposals/{proposalID}/submit", studyPipelineSubmitProposalRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/proposals/{proposalID}/promote", studyPipelinePromoteProposalRoute(opts))
+	router.Post("/api/courses/{courseID}/study-pipeline/proposals/{proposalID}/dismiss", studyPipelineDismissProposalRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/refine", studyPipelineRefineRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/tasks/{taskID}/chat", studyPipelineChatRoute(opts))
@@ -270,6 +276,14 @@ func studyPipelineSelectRunRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineRunStateRoute(opts, "select-run")
 }
 
+func studyPipelinePublishRunRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "publish-run")
+}
+
+func studyPipelineUnpublishRunRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineRunStateRoute(opts, "unpublish-run")
+}
+
 func studyPipelineReviewRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineRunStateRoute(opts, "review")
 }
@@ -278,17 +292,37 @@ func studyPipelineFeedbackRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineRunStateRoute(opts, "feedback")
 }
 
+func studyPipelineResolveFeedbackRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineIDStateRoute("resolve-feedback", "feedbackID", "feedbackId")
+}
+
+func studyPipelineDismissFeedbackRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineIDStateRoute("dismiss-feedback", "feedbackID", "feedbackId")
+}
+
 func studyPipelineProposalsRoute(opts ServerOptions) http.HandlerFunc {
 	return studyPipelineRunStateRoute(opts, "proposals")
 }
 
 func studyPipelineSubmitProposalRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineIDStateRoute("submit-proposal", "proposalID", "proposalId")
+}
+
+func studyPipelinePromoteProposalRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineIDStateRoute("promote-proposal", "proposalID", "proposalId")
+}
+
+func studyPipelineDismissProposalRoute(opts ServerOptions) http.HandlerFunc {
+	return studyPipelineIDStateRoute("dismiss-proposal", "proposalID", "proposalId")
+}
+
+func studyPipelineIDStateRoute(action string, pathParam string, queryParam string) http.HandlerFunc {
 	webHandler := withRouteQuery(serverless.Materials, map[string]string{
 		"route":  "study-pipeline",
-		"action": "submit-proposal",
+		"action": action,
 	}, map[string]string{
-		"courseID":   "courseId",
-		"proposalID": "proposalId",
+		"courseID": "courseId",
+		pathParam:  queryParam,
 	})
 	return func(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {

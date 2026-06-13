@@ -298,6 +298,81 @@ func (s *Store) SelectActiveStudyPipelineRun(ctx context.Context, userID string,
 	}, nil
 }
 
+func (s *Store) PublishStudyPipelineRun(ctx context.Context, userID string, courseID string, runID string, reason string) (ActiveRunSelectionRecord, StudyPipelineAuditRecord, error) {
+	if strings.TrimSpace(reason) == "" {
+		reason = "published from pipeline review"
+	}
+	selection, err := s.SelectActiveStudyPipelineRun(ctx, userID, courseID, runID, reason)
+	if err != nil {
+		return ActiveRunSelectionRecord{}, StudyPipelineAuditRecord{}, err
+	}
+	audit, err := insertStudyPipelineAudit(ctx, s.db, studyPipelineAuditInput{
+		CourseID:    courseID,
+		ActorID:     userID,
+		Action:      "run.published",
+		TargetKind:  "run",
+		TargetID:    runID,
+		SourceRunID: runID,
+		Message:     reason,
+	})
+	if err != nil {
+		return ActiveRunSelectionRecord{}, StudyPipelineAuditRecord{}, err
+	}
+	return selection, audit, nil
+}
+
+func (s *Store) UnpublishStudyPipelineRun(ctx context.Context, userID string, courseID string, runID string, reason string) (StudyPipelineAuditRecord, error) {
+	if s == nil || s.db == nil {
+		return StudyPipelineAuditRecord{}, sql.ErrConnDone
+	}
+	runID = strings.TrimSpace(runID)
+	if strings.TrimSpace(courseID) == "" || runID == "" {
+		return StudyPipelineAuditRecord{}, sql.ErrNoRows
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = "unpublished from pipeline review"
+	}
+	row := s.db.QueryRowContext(ctx, `
+		select id::text, source_id, course_id, coalesce(resource_id, ''), coalesce(file_hash, ''),
+			stage, engine, config_hash, ownership, coalesce(created_by::text, ''), status,
+			artifact_root, coalesce(error, ''), started_at, finished_at, created_at, artifact_refs::text
+		from study_pipeline_runs
+		where id = $1::uuid and course_id = $2
+	`, runID, strings.TrimSpace(courseID))
+	run, err := scanStudyPipelineRun(row)
+	if err != nil {
+		return StudyPipelineAuditRecord{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return StudyPipelineAuditRecord{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.ExecContext(ctx, `
+		delete from active_run_selections
+		where source_id = $1 and resource_id = $2 and stage = $3 and active_run_id = $4::uuid
+	`, run.SourceID, run.ResourceID, run.Stage, run.ID)
+	if err != nil {
+		return StudyPipelineAuditRecord{}, err
+	}
+	audit, err := insertStudyPipelineAudit(ctx, tx, studyPipelineAuditInput{
+		CourseID:    courseID,
+		ActorID:     userID,
+		Action:      "run.unpublished",
+		TargetKind:  "run",
+		TargetID:    run.ID,
+		SourceRunID: run.ID,
+		Message:     reason,
+	})
+	if err != nil {
+		return StudyPipelineAuditRecord{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return StudyPipelineAuditRecord{}, err
+	}
+	return audit, nil
+}
+
 func nullString(value string) sql.NullString {
 	value = strings.TrimSpace(value)
 	return sql.NullString{String: value, Valid: value != ""}

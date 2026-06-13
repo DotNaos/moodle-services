@@ -129,6 +129,76 @@ func TestSelectActiveStudyPipelineRunCanPointBackToOldRun(t *testing.T) {
 	}
 }
 
+func TestPublishStudyPipelineRunSelectsActiveRunAndAudits(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+	st := &Store{db: db}
+	now := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(regexp.QuoteMeta("from study_pipeline_runs")).
+		WithArgs("11111111-1111-1111-1111-111111111111", "22584", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").
+		WillReturnRows(sqlmock.NewRows(studyPipelineRunColumns()).
+			AddRow("11111111-1111-1111-1111-111111111111", "source:moodle-course:22584", "22584", "", "sha256:old", "extracted", "pdftotext", "config:pdftotext:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/old", "", now, now, now, `[]`))
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("insert into active_run_selections")).
+		WithArgs("source:moodle-course:22584", "", "extracted", "11111111-1111-1111-1111-111111111111", uuidArg("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "publish after review").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectQuery(regexp.QuoteMeta("insert into study_pipeline_audit_events")).
+		WithArgs("22584", uuidArg("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "run.published", "run", "11111111-1111-1111-1111-111111111111", uuidArg("11111111-1111-1111-1111-111111111111"), nullUUIDArg{}, "publish after review").
+		WillReturnRows(sqlmock.NewRows(studyPipelineAuditColumns()).
+			AddRow("66666666-6666-6666-6666-666666666666", "22584", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "run.published", "run", "11111111-1111-1111-1111-111111111111", "11111111-1111-1111-1111-111111111111", "", "publish after review", now))
+
+	selection, audit, err := st.PublishStudyPipelineRun(context.Background(), "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "22584", "11111111-1111-1111-1111-111111111111", "publish after review")
+	if err != nil {
+		t.Fatalf("PublishStudyPipelineRun: %v", err)
+	}
+	if selection.ActiveRunID != "11111111-1111-1111-1111-111111111111" || audit.Action != "run.published" {
+		t.Fatalf("unexpected publish result: %#v %#v", selection, audit)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestUnpublishStudyPipelineRunClearsSelectionAndAudits(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+	st := &Store{db: db}
+	now := time.Date(2026, 6, 13, 10, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(regexp.QuoteMeta("from study_pipeline_runs")).
+		WithArgs("11111111-1111-1111-1111-111111111111", "22584").
+		WillReturnRows(sqlmock.NewRows(studyPipelineRunColumns()).
+			AddRow("11111111-1111-1111-1111-111111111111", "source:moodle-course:22584", "22584", "", "sha256:old", "extracted", "pdftotext", "config:pdftotext:default", "shared", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "succeeded", "/srv/old", "", now, now, now, `[]`))
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("delete from active_run_selections")).
+		WithArgs("source:moodle-course:22584", "", "extracted", "11111111-1111-1111-1111-111111111111").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(regexp.QuoteMeta("insert into study_pipeline_audit_events")).
+		WithArgs("22584", uuidArg("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "run.unpublished", "run", "11111111-1111-1111-1111-111111111111", uuidArg("11111111-1111-1111-1111-111111111111"), nullUUIDArg{}, "hide broken output").
+		WillReturnRows(sqlmock.NewRows(studyPipelineAuditColumns()).
+			AddRow("66666666-6666-6666-6666-666666666666", "22584", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "run.unpublished", "run", "11111111-1111-1111-1111-111111111111", "11111111-1111-1111-1111-111111111111", "", "hide broken output", now))
+	mock.ExpectCommit()
+
+	audit, err := st.UnpublishStudyPipelineRun(context.Background(), "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "22584", "11111111-1111-1111-1111-111111111111", "hide broken output")
+	if err != nil {
+		t.Fatalf("UnpublishStudyPipelineRun: %v", err)
+	}
+	if audit.Action != "run.unpublished" {
+		t.Fatalf("unexpected audit result: %#v", audit)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
 func expectRecordRun(t *testing.T, mock sqlmock.Sqlmock, runID string, at time.Time) {
 	t.Helper()
 	mock.ExpectBegin()

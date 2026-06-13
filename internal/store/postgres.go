@@ -176,6 +176,22 @@ func ensureCompatibilitySchema(ctx context.Context, db *sql.DB) error {
 
 		create index if not exists study_pipeline_proposals_course_idx
 		  on study_pipeline_proposals (course_id, created_at desc);
+
+		create table if not exists study_pipeline_audit_events (
+		  id uuid primary key default gen_random_uuid(),
+		  course_id text not null,
+		  actor_id uuid references users(id) on delete set null,
+		  action text not null,
+		  target_kind text not null,
+		  target_id text not null,
+		  source_run_id uuid references study_pipeline_runs(id) on delete set null,
+		  source_artifact_id text,
+		  message text not null default '',
+		  created_at timestamptz not null default now()
+		);
+
+		create index if not exists study_pipeline_audit_events_course_idx
+		  on study_pipeline_audit_events (course_id, created_at desc);
 	`)
 	return err
 }

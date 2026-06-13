@@ -153,7 +153,7 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
-		feedback, proposals, err := studyStore.ListStudyPipelineReview(r.Context(), courseID)
+		feedback, proposals, audit, err := studyStore.ListStudyPipelineReview(r.Context(), courseID)
 		if err != nil {
 			svc.WriteError(w, err)
 			return
@@ -162,6 +162,7 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			CourseID:  courseID,
 			Feedback:  feedback,
 			Proposals: proposals,
+			Audit:     audit,
 		})
 	case "feedback":
 		if r.Method != http.MethodPost {
@@ -238,6 +239,132 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			return
 		}
 		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineProposalResponse{Proposal: proposal})
+	case "promote-proposal":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if studyStore == nil {
+			svc.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "pipeline review storage is not configured"})
+			return
+		}
+		proposalID := strings.TrimSpace(r.URL.Query().Get("proposalId"))
+		if proposalID == "" {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "proposalId query parameter is required"})
+			return
+		}
+		input := moderationRequest(r)
+		proposal, audit, err := studyStore.PromoteStudyPipelineProposal(r.Context(), studyUserID, courseID, proposalID, input.Reason)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineProposalModerationResponse{Proposal: proposal, Audit: audit})
+	case "dismiss-proposal":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if studyStore == nil {
+			svc.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "pipeline review storage is not configured"})
+			return
+		}
+		proposalID := strings.TrimSpace(r.URL.Query().Get("proposalId"))
+		if proposalID == "" {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "proposalId query parameter is required"})
+			return
+		}
+		input := moderationRequest(r)
+		proposal, audit, err := studyStore.DismissStudyPipelineProposal(r.Context(), studyUserID, courseID, proposalID, input.Reason)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineProposalModerationResponse{Proposal: proposal, Audit: audit})
+	case "resolve-feedback":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if studyStore == nil {
+			svc.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "pipeline review storage is not configured"})
+			return
+		}
+		feedbackID := strings.TrimSpace(r.URL.Query().Get("feedbackId"))
+		if feedbackID == "" {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "feedbackId query parameter is required"})
+			return
+		}
+		input := moderationRequest(r)
+		feedback, audit, err := studyStore.ResolveStudyPipelineFeedback(r.Context(), studyUserID, courseID, feedbackID, input.Reason)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineFeedbackModerationResponse{Feedback: feedback, Audit: audit})
+	case "dismiss-feedback":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if studyStore == nil {
+			svc.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "pipeline review storage is not configured"})
+			return
+		}
+		feedbackID := strings.TrimSpace(r.URL.Query().Get("feedbackId"))
+		if feedbackID == "" {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "feedbackId query parameter is required"})
+			return
+		}
+		input := moderationRequest(r)
+		feedback, audit, err := studyStore.DismissStudyPipelineFeedback(r.Context(), studyUserID, courseID, feedbackID, input.Reason)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelineFeedbackModerationResponse{Feedback: feedback, Audit: audit})
+	case "publish-run":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if studyStore == nil {
+			svc.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "pipeline run storage is not configured"})
+			return
+		}
+		runID := strings.TrimSpace(r.URL.Query().Get("runId"))
+		if runID == "" {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "runId query parameter is required"})
+			return
+		}
+		input := moderationRequest(r)
+		selection, audit, err := studyStore.PublishStudyPipelineRun(r.Context(), studyUserID, courseID, runID, input.Reason)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelinePublishRunResponse{Selection: &selection, Audit: audit})
+	case "unpublish-run":
+		if r.Method != http.MethodPost {
+			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+		if studyStore == nil {
+			svc.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "pipeline run storage is not configured"})
+			return
+		}
+		runID := strings.TrimSpace(r.URL.Query().Get("runId"))
+		if runID == "" {
+			svc.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "runId query parameter is required"})
+			return
+		}
+		input := moderationRequest(r)
+		audit, err := studyStore.UnpublishStudyPipelineRun(r.Context(), studyUserID, courseID, runID, input.Reason)
+		if err != nil {
+			svc.WriteError(w, err)
+			return
+		}
+		svc.WriteJSON(w, http.StatusOK, contract.StudyPipelinePublishRunResponse{Audit: audit})
 	case "inventory":
 		if r.Method != http.MethodGet {
 			svc.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -443,6 +570,15 @@ func applyStageRequestOptions(r *http.Request, options *studypipeline.RunOptions
 	}
 	options.Engine = input.Engine
 	options.ConfigHash = input.ConfigHash
+}
+
+func moderationRequest(r *http.Request) contract.StudyPipelineModerationRequest {
+	var input contract.StudyPipelineModerationRequest
+	if r.Body == nil {
+		return input
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	return input
 }
 
 func defaultStage(stage string) string {

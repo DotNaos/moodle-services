@@ -134,6 +134,10 @@ type StudyPipelineSelectRunRequest struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+type StudyPipelineModerationRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
 type StudyPipelineStageRequest struct {
 	Engine     string `json:"engine,omitempty"`
 	ConfigHash string `json:"configHash,omitempty"`
@@ -141,6 +145,11 @@ type StudyPipelineStageRequest struct {
 
 type StudyPipelineSelectRunResponse struct {
 	Selection store.ActiveRunSelectionRecord `json:"selection"`
+}
+
+type StudyPipelinePublishRunResponse struct {
+	Selection *store.ActiveRunSelectionRecord `json:"selection,omitempty"`
+	Audit     store.StudyPipelineAuditRecord  `json:"audit"`
 }
 
 type StudyPipelineFeedbackRequest struct {
@@ -154,6 +163,11 @@ type StudyPipelineFeedbackRequest struct {
 
 type StudyPipelineFeedbackResponse struct {
 	Feedback store.StudyPipelineFeedbackRecord `json:"feedback"`
+}
+
+type StudyPipelineFeedbackModerationResponse struct {
+	Feedback store.StudyPipelineFeedbackRecord `json:"feedback"`
+	Audit    store.StudyPipelineAuditRecord    `json:"audit"`
 }
 
 type StudyPipelineProposalRequest struct {
@@ -170,10 +184,16 @@ type StudyPipelineProposalResponse struct {
 	Proposal store.StudyPipelineProposalRecord `json:"proposal"`
 }
 
+type StudyPipelineProposalModerationResponse struct {
+	Proposal store.StudyPipelineProposalRecord `json:"proposal"`
+	Audit    store.StudyPipelineAuditRecord    `json:"audit"`
+}
+
 type StudyPipelineReviewResponse struct {
 	CourseID  string                              `json:"courseId"`
 	Feedback  []store.StudyPipelineFeedbackRecord `json:"feedback"`
 	Proposals []store.StudyPipelineProposalRecord `json:"proposals"`
+	Audit     []store.StudyPipelineAuditRecord    `json:"audit"`
 }
 
 type StudyPipelineSummary struct {
