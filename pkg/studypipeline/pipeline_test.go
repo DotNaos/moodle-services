@@ -434,6 +434,77 @@ func TestCuratedStageBuildsScriptFromExtractedContent(t *testing.T) {
 	}
 }
 
+func TestLoadTaskViewIncludesExtractedImageAssets(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	now := time.Date(2026, 6, 14, 9, 10, 0, 0, time.UTC)
+	resources := []moodle.Resource{
+		{ID: "947711", Name: "Aufgabenblatt 01", FileType: "pdf", SectionName: "Week 1"},
+	}
+	writeExtractedFixture(t, root, courseID, "tasks", "947711-Aufgabenblatt 01", "Aufgabe 1\n\nMit Diagramm.")
+	writeLatestExtractedDocumentFixture(t, root, courseID, contract.ExtractedDocumentsResponse{
+		CourseID:     courseID,
+		RunID:        "baseline-20260614T091000Z",
+		GeneratedAt:  now.Format(time.RFC3339),
+		Engine:       extractedDocumentEngine,
+		ArtifactRoot: filepath.Join(root, "courses", courseID),
+		Documents: []contract.PDFDocument{{
+			ID: "947711",
+			Resource: contract.StudyPipelineMaterial{
+				ID:       "947711",
+				Name:     "Aufgabenblatt 01",
+				Type:     "task",
+				FileType: "pdf",
+			},
+			RunID:  "baseline-20260614T091000Z",
+			Engine: extractedDocumentEngine,
+			Status: "machine-extracted",
+			Pages: []contract.PDFPage{{
+				ID:         "947711-page-001",
+				PageNumber: 1,
+				Text:       "Aufgabe 1\n\nMit Diagramm.",
+				Markdown:   "Aufgabe 1\n\nMit Diagramm.",
+				Blocks: []contract.DocumentBlock{{
+					ID:         "947711-p001-b001",
+					PageNumber: 1,
+					Type:       "paragraph",
+					Label:      "task_paragraph",
+					Text:       "Mit Diagramm.",
+					Markdown:   "Mit Diagramm.",
+					Source:     "extracted_text",
+					Confidence: "high",
+				}},
+			}},
+			Assets: []contract.DocumentAsset{{
+				ID:       "embedded-image-001",
+				Kind:     "embedded_image",
+				Path:     filepath.Join(root, "courses", courseID, "extracted", "runs", "baseline-20260614T091000Z", "assets", "947711-aufgabenblatt-01", "images", "image-000.png"),
+				MimeType: "image/png",
+				Role:     "extracted_image",
+			}},
+			Diagnostics: contract.ExtractedDocumentDiagnostics{
+				ExtractedImageAssets: 1,
+				UnusedImageAssets:    []string{"embedded-image-001"},
+			},
+		}},
+	})
+
+	view, err := LoadTaskView(courseID, resources, false, RunOptions{
+		Root: root,
+		Now:  now,
+	})
+	if err != nil {
+		t.Fatalf("LoadTaskView: %v", err)
+	}
+	if len(view.Sheets) != 1 || len(view.Sheets[0].Tasks) != 1 {
+		t.Fatalf("expected one task, got %#v", view.Sheets)
+	}
+	prompt := view.Sheets[0].Tasks[0].PromptMarkdown
+	if !strings.Contains(prompt, "embedded-image-001") || !strings.Contains(prompt, "/api/study-pipeline/courses/22584/study-pipeline/extracted-asset?path=") {
+		t.Fatalf("expected task view prompt to include extracted image figure, got %q", prompt)
+	}
+}
+
 func TestRefineContentWritesSeparateImprovedArtifact(t *testing.T) {
 	root := t.TempDir()
 	courseID := "22585"
