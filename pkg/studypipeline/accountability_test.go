@@ -185,7 +185,7 @@ done
 `), 0o755); err != nil {
 		t.Fatalf("write hook: %v", err)
 	}
-	t.Setenv(EnvCodexCommand, hook)
+	t.Setenv(EnvCodexCommand, shellQuoteForTest(filepath.ToSlash(hook)))
 
 	response, err := RunStage(courseID, resources, "curated", RunOptions{
 		Root: root,
@@ -220,4 +220,8 @@ func writeLatestExtractedDocumentFixture(t *testing.T, root string, courseID str
 	if err := writeJSONFile(path, response); err != nil {
 		t.Fatalf("write latest extracted fixture: %v", err)
 	}
+}
+
+func shellQuoteForTest(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
