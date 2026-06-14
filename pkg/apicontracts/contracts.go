@@ -147,6 +147,29 @@ type StudyPipelineStageRequest struct {
 	ResourceIDs []string `json:"resourceIds,omitempty"`
 }
 
+type StudyPipelinePlanRequest struct {
+	Mode        string   `json:"mode,omitempty"`
+	StartStage  string   `json:"startStage,omitempty"`
+	Engine      string   `json:"engine,omitempty"`
+	ConfigHash  string   `json:"configHash,omitempty"`
+	ResourceIDs []string `json:"resourceIds,omitempty"`
+}
+
+type StudyPipelinePlanStep struct {
+	Stage    string                        `json:"stage"`
+	Status   string                        `json:"status"`
+	Error    string                        `json:"error,omitempty"`
+	Response *StudyPipelineResponse        `json:"response,omitempty"`
+	Run      *store.StudyPipelineRunRecord `json:"run,omitempty"`
+}
+
+type StudyPipelinePlanResponse struct {
+	CourseID string                  `json:"courseId"`
+	Status   string                  `json:"status"`
+	Steps    []StudyPipelinePlanStep `json:"steps"`
+	Response *StudyPipelineResponse  `json:"response,omitempty"`
+}
+
 type StudyPipelineSelectRunResponse struct {
 	Selection store.ActiveRunSelectionRecord `json:"selection"`
 }

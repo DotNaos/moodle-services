@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,6 +74,7 @@ func NewRouter(opts ServerOptions) (*chi.Mux, error) {
 	router.Get("/api/courses/{courseID}/resources", courseResourcesHandler(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline", studyPipelineStatusRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline", studyPipelineStageRoute(opts, "curated"))
+	router.Post("/api/courses/{courseID}/study-pipeline/plan", studyPipelinePlanRoute(opts))
 	router.Post("/api/courses/{courseID}/study-pipeline/{stage}", studyPipelineStageRoute(opts, ""))
 	router.Get("/api/courses/{courseID}/study-pipeline/status", studyPipelineStatusRoute(opts))
 	router.Get("/api/courses/{courseID}/study-pipeline/inventory", studyPipelineInventoryRoute(opts))
@@ -219,6 +221,26 @@ func studyPipelineStageRoute(opts ServerOptions, fallbackStage string) http.Hand
 	}, map[string]string{
 		"courseID": "courseId",
 		"stage":    "stage",
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+			webHandler(w, r)
+			return
+		}
+		if rejectHostedAnonymous(w, r) {
+			return
+		}
+		localHandler(w, r)
+	}
+}
+
+func studyPipelinePlanRoute(opts ServerOptions) http.HandlerFunc {
+	localHandler := studyPipelinePlanHandler(opts)
+	webHandler := withRouteQuery(serverless.Materials, map[string]string{
+		"route":  "study-pipeline",
+		"action": "plan",
+	}, map[string]string{
+		"courseID": "courseId",
 	})
 	return func(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(r.Header.Get("X-Moodle-App-Key")) != "" || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
@@ -506,19 +528,133 @@ func studyPipelineStageHandler(opts ServerOptions, fallbackStage string) http.Ha
 			return
 		}
 		response, err := studypipeline.RunStage(courseID, filteredResources, stage, options)
+		workCtx := context.WithoutCancel(r.Context())
 		if err != nil {
-			if recordErr := recordLocalStudyPipelineFailure(r.Context(), courseID, stage, options, err); recordErr != nil {
+			if recordErr := recordLocalStudyPipelineFailure(workCtx, courseID, stage, options, err); recordErr != nil {
 				writeError(w, http.StatusInternalServerError, recordErr)
 				return
 			}
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		if err := recordLocalStudyPipeline(r.Context(), &response); err != nil {
+		if err := recordLocalStudyPipeline(workCtx, &response); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, response)
+	}
+}
+
+func studyPipelinePlanHandler(opts ServerOptions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		courseID, resources, downloader, ok := studyPipelineContext(w, r, opts)
+		if !ok {
+			return
+		}
+		input := readLocalPlanRequest(r)
+		stages, err := studyPipelinePlanStages(input.Mode, input.StartStage)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		filteredResources, ok := filterLocalStudyPipelineResources(resources, input.ResourceIDs)
+		if !ok {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no Moodle resources matched requested resourceIds"))
+			return
+		}
+
+		workCtx := context.WithoutCancel(r.Context())
+		steps := make([]contract.StudyPipelinePlanStep, 0, len(stages))
+		for _, stage := range stages {
+			steps = append(steps, contract.StudyPipelinePlanStep{Stage: stage, Status: "queued"})
+		}
+		result := contract.StudyPipelinePlanResponse{
+			CourseID: courseID,
+			Status:   "succeeded",
+			Steps:    steps,
+		}
+
+		for index, stage := range stages {
+			options := studypipeline.RunOptions{
+				Downloader: downloader,
+				Now:        time.Now(),
+			}
+			applyLocalPlanStageOptions(input, stage, &options)
+			result.Steps[index].Status = "running"
+
+			response, runErr := studypipeline.RunStage(courseID, filteredResources, stage, options)
+			if runErr != nil {
+				result.Status = "failed"
+				result.Steps[index].Status = "failed"
+				result.Steps[index].Error = runErr.Error()
+				if recordErr := recordLocalStudyPipelineFailure(workCtx, courseID, stage, options, runErr); recordErr != nil {
+					result.Steps[index].Error = recordErr.Error()
+				}
+				break
+			}
+			if recordErr := recordLocalStudyPipeline(workCtx, &response); recordErr != nil {
+				result.Status = "failed"
+				result.Steps[index].Status = "failed"
+				result.Steps[index].Error = recordErr.Error()
+				break
+			}
+			result.Steps[index].Status = "succeeded"
+			result.Steps[index].Response = &response
+			result.Steps[index].Run = response.Run
+			result.Response = &response
+		}
+
+		writeJSON(w, http.StatusOK, result)
+	}
+}
+
+func readLocalPlanRequest(r *http.Request) contract.StudyPipelinePlanRequest {
+	if r.Body == nil {
+		return contract.StudyPipelinePlanRequest{}
+	}
+	var input contract.StudyPipelinePlanRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		return contract.StudyPipelinePlanRequest{}
+	}
+	return input
+}
+
+func studyPipelinePlanStages(mode string, startStage string) ([]string, error) {
+	stageIDs := []string{"inventory", "raw", "extracted", "curated"}
+	startStage = strings.TrimSpace(startStage)
+	if startStage == "" {
+		startStage = "curated"
+	}
+	startIndex := -1
+	for index, stage := range stageIDs {
+		if stage == startStage {
+			startIndex = index
+			break
+		}
+	}
+	if startIndex < 0 {
+		return nil, fmt.Errorf("unknown study pipeline stage %q", startStage)
+	}
+	switch strings.TrimSpace(mode) {
+	case "", "from":
+		return stageIDs[startIndex:], nil
+	case "single":
+		return []string{stageIDs[startIndex]}, nil
+	default:
+		return nil, fmt.Errorf("unknown study pipeline mode %q", mode)
+	}
+}
+
+func applyLocalPlanStageOptions(input contract.StudyPipelinePlanRequest, stage string, options *studypipeline.RunOptions) {
+	options.Engine = input.Engine
+	options.ConfigHash = input.ConfigHash
+	if stage == "extracted" {
+		if strings.TrimSpace(options.Engine) == "" {
+			options.Engine = "pdftotext"
+		}
+		if strings.TrimSpace(options.ConfigHash) == "" {
+			options.ConfigHash = "config:extracted:pdftotext:default"
+		}
 	}
 }
 
