@@ -1,6 +1,9 @@
 services:
     moodle-api:
-        build: .
+        build:
+            context: .
+            args:
+                RUNTIME_BASE_IMAGE: ${MOODLE_RUNTIME_BASE_IMAGE:-ghcr.io/dotnaos/moodle-services-runtime-base:bookworm}
         image: ghcr.io/dotnaos/moodle-services:latest
         command: ['serve', '--addr', ':8080']
         environment:
