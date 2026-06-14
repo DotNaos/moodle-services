@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -695,10 +696,14 @@ func buildScript(root string, courseID string, plan contract.StudyPipelineRespon
 		content := displayContentForMaterial(root, courseID, material, "script-section")
 		if content == "" {
 			out.WriteString("No extracted text was available for this Moodle resource.\n\n")
-			continue
+		} else {
+			out.WriteString(content)
+			out.WriteString("\n\n")
 		}
-		out.WriteString(content)
-		out.WriteString("\n\n")
+		if assets := curatedVisualAssetMarkdown(root, courseID, material, content); assets != "" {
+			out.WriteString(assets)
+			out.WriteString("\n\n")
+		}
 	}
 	if out.Len() == 0 {
 		out.WriteString("No script material was detected yet.\n")
@@ -749,6 +754,9 @@ func taskPrompt(root string, courseID string, link contract.StudyPipelineTaskLin
 	} else {
 		lines = append(lines, "No extracted task text was available for this Moodle resource.")
 	}
+	if assets := curatedVisualAssetMarkdown(root, courseID, link.Task, content); assets != "" {
+		lines = append(lines, "", assets)
+	}
 	if link.Solution != nil {
 		lines = append(lines, "", "Linked solution: [moodle-resource:"+link.Solution.ID+"]")
 	} else {
@@ -770,7 +778,7 @@ func effectiveTaskLinks(materials []contract.StudyPipelineMaterial, links []cont
 
 func solutionPrompt(root string, courseID string, resource contract.StudyPipelineMaterial) string {
 	content := extractedContentForMaterial(root, courseID, resource)
-	return strings.Join([]string{
+	lines := []string{
 		"---",
 		"status: solution-from-extracted",
 		"ai_used: false",
@@ -783,7 +791,11 @@ func solutionPrompt(root string, courseID string, resource contract.StudyPipelin
 		"Source: [Moodle resource](moodle-resource:" + resource.ID + ")",
 		"",
 		firstNonEmpty(content, "No extracted solution text was available for this Moodle resource."),
-	}, "\n") + "\n"
+	}
+	if assets := curatedVisualAssetMarkdown(root, courseID, resource, content); assets != "" {
+		lines = append(lines, "", assets)
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
 
 func scriptContentStates(root string, courseID string, plan contract.StudyPipelineResponse) []contract.StudyPipelineContentRef {
@@ -802,6 +814,74 @@ func displayContentForMaterial(root string, courseID string, material contract.S
 		return content
 	}
 	return extractedContentForMaterial(root, courseID, material)
+}
+
+func curatedVisualAssetMarkdown(root string, courseID string, material contract.StudyPipelineMaterial, existingOutput string) string {
+	extracted, ok, err := readLatestExtractedDocuments(root, courseID)
+	if err != nil || !ok {
+		return ""
+	}
+	var document *contract.PDFDocument
+	for index := range extracted.Documents {
+		if extracted.Documents[index].Resource.ID == material.ID {
+			document = &extracted.Documents[index]
+			break
+		}
+	}
+	if document == nil {
+		return ""
+	}
+	figures := []string{}
+	for _, asset := range document.Assets {
+		if !isCuratedVisualAsset(asset) || strings.TrimSpace(asset.Path) == "" || assetReferenced(existingOutput, asset) {
+			continue
+		}
+		figures = append(figures, curatedAssetFigure(courseID, asset))
+	}
+	if len(figures) == 0 {
+		return ""
+	}
+	return "## PDF-Bilder\n\n" + strings.Join(figures, "\n\n")
+}
+
+func isCuratedVisualAsset(asset contract.DocumentAsset) bool {
+	switch strings.TrimSpace(asset.Kind) {
+	case "embedded_image", "image", "figure", "chart", "diagram":
+		return true
+	default:
+		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(asset.MimeType)), "image/")
+	}
+}
+
+func curatedAssetFigure(courseID string, asset contract.DocumentAsset) string {
+	label := firstNonEmpty(asset.ID, filepath.Base(asset.Path), "pdf-image")
+	src := "/api/study-pipeline/courses/" + url.PathEscape(courseID) + "/study-pipeline/extracted-asset?path=" + url.QueryEscape(asset.Path)
+	alt := "PDF element " + label
+	return strings.Join([]string{
+		"<figure>",
+		`<img src="` + escapeHTMLAttribute(src) + `" alt="` + escapeHTMLAttribute(alt) + `" />`,
+		"<figcaption>" + escapeHTMLText(label) + "</figcaption>",
+		"</figure>",
+	}, "\n")
+}
+
+func escapeHTMLAttribute(value string) string {
+	replacer := strings.NewReplacer(
+		"&", "&amp;",
+		`"`, "&quot;",
+		"<", "&lt;",
+		">", "&gt;",
+	)
+	return replacer.Replace(value)
+}
+
+func escapeHTMLText(value string) string {
+	replacer := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+	)
+	return replacer.Replace(value)
 }
 
 func improvedContentForMaterial(root string, courseID string, material contract.StudyPipelineMaterial, kind string) string {

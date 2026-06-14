@@ -11,7 +11,7 @@ import (
 	contract "github.com/DotNaos/moodle-services/pkg/apicontracts"
 )
 
-func TestCuratedStageWritesElementAccountabilityAndBlocksUnhandledImages(t *testing.T) {
+func TestCuratedStageWritesElementAccountabilityAndUsesExtractedImages(t *testing.T) {
 	root := t.TempDir()
 	courseID := "22584"
 	now := time.Date(2026, 6, 13, 15, 18, 39, 0, time.UTC)
@@ -77,14 +77,11 @@ func TestCuratedStageWritesElementAccountabilityAndBlocksUnhandledImages(t *test
 		Root: root,
 		Now:  now,
 	})
-	if err == nil {
-		t.Fatalf("expected curated stage to fail when an image needs accountability")
+	if err != nil {
+		t.Fatalf("RunStage curated: %v", err)
 	}
-	if !strings.Contains(err.Error(), "element accountability incomplete") {
-		t.Fatalf("expected element accountability error, got %v", err)
-	}
-	if response.CurationChecklist == nil || response.CurationChecklist.Status != "incomplete" {
-		t.Fatalf("expected incomplete checklist, got %#v", response.CurationChecklist)
+	if response.CurationChecklist == nil || response.CurationChecklist.Status != "complete" {
+		t.Fatalf("expected complete checklist, got %#v", response.CurationChecklist)
 	}
 	if len(response.ElementDecisions) != 2 {
 		t.Fatalf("expected text and image decisions, got %#v", response.ElementDecisions)
@@ -93,8 +90,8 @@ func TestCuratedStageWritesElementAccountabilityAndBlocksUnhandledImages(t *test
 		t.Fatalf("expected text block to be used, got %#v", response.ElementDecisions[0])
 	}
 	imageDecision := response.ElementDecisions[1]
-	if imageDecision.SourceAssetID != "embedded-image-001" || imageDecision.Outcome != "needs_review" {
-		t.Fatalf("expected unreferenced image to need review, got %#v", imageDecision)
+	if imageDecision.SourceAssetID != "embedded-image-001" || imageDecision.Outcome != "used_in_output" {
+		t.Fatalf("expected extracted image to be used in output, got %#v", imageDecision)
 	}
 	if len(response.ArtifactRefs) < 4 {
 		t.Fatalf("expected page render, manifest, checklist, and preview refs, got %#v", response.ArtifactRefs)
@@ -102,6 +99,17 @@ func TestCuratedStageWritesElementAccountabilityAndBlocksUnhandledImages(t *test
 	manifestPath := filepath.Join(root, "courses", courseID, "curated", "accountability", "curated-20260613T151839Z", "element-accountability.json")
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Fatalf("expected accountability manifest: %v", err)
+	}
+	taskPath := filepath.Join(root, "courses", courseID, "curated", "tasks", safeSegment(taskID(contract.StudyPipelineMaterial{
+		ID:   "947711",
+		Name: "Aufgabenblatt 01",
+	}))+".mdx")
+	taskOutput, err := os.ReadFile(taskPath)
+	if err != nil {
+		t.Fatalf("read curated task: %v", err)
+	}
+	if !strings.Contains(string(taskOutput), "embedded-image-001") || !strings.Contains(string(taskOutput), "/api/study-pipeline/courses/22584/study-pipeline/extracted-asset?path=") {
+		t.Fatalf("expected curated task to include extracted image reference, got %q", string(taskOutput))
 	}
 }
 
