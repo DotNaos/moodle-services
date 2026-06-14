@@ -89,6 +89,53 @@ func TestStudyPipelineHandlerBuildsCoursePlan(t *testing.T) {
 	}
 }
 
+func TestStudyPipelinePlanRouteRunsStagesServerSide(t *testing.T) {
+	t.Setenv(studypipeline.EnvArtifactRoot, t.TempDir())
+	router, err := NewRouter(ServerOptions{
+		ClientProvider: func() (Client, error) {
+			return stubClient{
+				resources: map[string][]moodle.Resource{
+					"22584": {
+						{ID: "2", Name: "Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+						{ID: "3", Name: "Lösung Aufgabenblatt 01", FileType: "pdf", SectionID: "s1"},
+					},
+				},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/courses/22584/study-pipeline/plan",
+		strings.NewReader(`{"mode":"from","startStage":"extracted"}`),
+	)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var payload contract.StudyPipelinePlanResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Status != "succeeded" || len(payload.Steps) != 2 {
+		t.Fatalf("unexpected plan payload: %#v", payload)
+	}
+	if payload.Steps[0].Stage != "extracted" || payload.Steps[0].Status != "succeeded" {
+		t.Fatalf("unexpected first step: %#v", payload.Steps[0])
+	}
+	if payload.Steps[1].Stage != "curated" || payload.Steps[1].Status != "succeeded" {
+		t.Fatalf("unexpected second step: %#v", payload.Steps[1])
+	}
+	if payload.Response == nil || payload.Response.Stage != "curated" {
+		t.Fatalf("expected final curated response, got %#v", payload.Response)
+	}
+}
+
 func TestStudyPipelineInventoryRouteBuildsTaskGroups(t *testing.T) {
 	t.Setenv(studypipeline.EnvArtifactRoot, t.TempDir())
 	router, err := NewRouter(ServerOptions{
