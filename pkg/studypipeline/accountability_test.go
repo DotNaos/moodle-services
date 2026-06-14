@@ -3,6 +3,7 @@ package studypipeline
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,8 +77,11 @@ func TestCuratedStageWritesElementAccountabilityAndBlocksUnhandledImages(t *test
 		Root: root,
 		Now:  now,
 	})
-	if err != nil {
-		t.Fatalf("RunStage curated: %v", err)
+	if err == nil {
+		t.Fatalf("expected curated stage to fail when an image needs accountability")
+	}
+	if !strings.Contains(err.Error(), "element accountability incomplete") {
+		t.Fatalf("expected element accountability error, got %v", err)
 	}
 	if response.CurationChecklist == nil || response.CurationChecklist.Status != "incomplete" {
 		t.Fatalf("expected incomplete checklist, got %#v", response.CurationChecklist)

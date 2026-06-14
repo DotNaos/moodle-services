@@ -530,6 +530,14 @@ func studyPipelineStageHandler(opts ServerOptions, fallbackStage string) http.Ha
 		response, err := studypipeline.RunStage(courseID, filteredResources, stage, options)
 		workCtx := context.WithoutCancel(r.Context())
 		if err != nil {
+			if response.CourseID != "" {
+				if recordErr := recordLocalStudyPipeline(workCtx, &response); recordErr != nil {
+					writeError(w, http.StatusInternalServerError, recordErr)
+					return
+				}
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
 			if recordErr := recordLocalStudyPipelineFailure(workCtx, courseID, stage, options, err); recordErr != nil {
 				writeError(w, http.StatusInternalServerError, recordErr)
 				return
@@ -587,7 +595,15 @@ func studyPipelinePlanHandler(opts ServerOptions) http.HandlerFunc {
 				result.Status = "failed"
 				result.Steps[index].Status = "failed"
 				result.Steps[index].Error = runErr.Error()
-				if recordErr := recordLocalStudyPipelineFailure(workCtx, courseID, stage, options, runErr); recordErr != nil {
+				if response.CourseID != "" {
+					if recordErr := recordLocalStudyPipeline(workCtx, &response); recordErr != nil {
+						result.Steps[index].Error = recordErr.Error()
+					} else {
+						result.Steps[index].Response = &response
+						result.Steps[index].Run = response.Run
+						result.Response = &response
+					}
+				} else if recordErr := recordLocalStudyPipelineFailure(workCtx, courseID, stage, options, runErr); recordErr != nil {
 					result.Steps[index].Error = recordErr.Error()
 				}
 				break

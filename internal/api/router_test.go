@@ -71,20 +71,14 @@ func TestStudyPipelineHandlerBuildsCoursePlan(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/courses/22584/study-pipeline", nil)
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusInternalServerError, rec.Code, rec.Body.String())
 	}
-	var payload struct {
-		Status  string `json:"status"`
-		Summary struct {
-			Tasks           int `json:"tasks"`
-			LinkedSolutions int `json:"linkedSolutions"`
-		} `json:"summary"`
-	}
+	var payload map[string]string
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.Status != "curated-ready" || payload.Summary.Tasks != 1 || payload.Summary.LinkedSolutions != 1 {
+	if !strings.Contains(payload["error"], "element accountability incomplete") {
 		t.Fatalf("unexpected payload: %#v", payload)
 	}
 }
@@ -122,14 +116,17 @@ func TestStudyPipelinePlanRouteRunsStagesServerSide(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.Status != "succeeded" || len(payload.Steps) != 2 {
+	if payload.Status != "failed" || len(payload.Steps) != 2 {
 		t.Fatalf("unexpected plan payload: %#v", payload)
 	}
 	if payload.Steps[0].Stage != "extracted" || payload.Steps[0].Status != "succeeded" {
 		t.Fatalf("unexpected first step: %#v", payload.Steps[0])
 	}
-	if payload.Steps[1].Stage != "curated" || payload.Steps[1].Status != "succeeded" {
+	if payload.Steps[1].Stage != "curated" || payload.Steps[1].Status != "failed" {
 		t.Fatalf("unexpected second step: %#v", payload.Steps[1])
+	}
+	if !strings.Contains(payload.Steps[1].Error, "element accountability incomplete") {
+		t.Fatalf("expected accountability error, got %#v", payload.Steps[1])
 	}
 	if payload.Response == nil || payload.Response.Stage != "curated" {
 		t.Fatalf("expected final curated response, got %#v", payload.Response)
