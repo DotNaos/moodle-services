@@ -71,11 +71,12 @@ func buildCuratedAccountability(root string, courseID string, moodleResources []
 		return curatedAccountabilityReport{}, err
 	}
 
+	scopedDocuments := extractedDocumentsForMaterials(extracted.Documents, resources)
 	outputs := curatedOutputsByResource(root, courseID, resources)
-	pageRenderRefs := pageRenderArtifactRefs(root, courseID, runID, extracted.Documents)
-	pageRenderByDocumentPage := pageRenderArtifactIDsByDocumentPage(extracted.Documents)
+	pageRenderRefs := pageRenderArtifactRefs(root, courseID, runID, scopedDocuments)
+	pageRenderByDocumentPage := pageRenderArtifactIDsByDocumentPage(scopedDocuments)
 	decisions := make([]store.StudyPipelineElementDecision, 0)
-	for _, document := range extracted.Documents {
+	for _, document := range scopedDocuments {
 		output := outputs[document.Resource.ID]
 		decisions = append(decisions, blockElementDecisions(document, output, pageRenderByDocumentPage, now)...)
 		decisions = append(decisions, assetElementDecisions(document, output, pageRenderByDocumentPage, now)...)
@@ -159,6 +160,28 @@ func buildCuratedAccountability(root string, courseID string, moodleResources []
 		Checklist:        checklist,
 		ElementDecisions: decisions,
 	}, nil
+}
+
+func extractedDocumentsForMaterials(documents []contract.PDFDocument, materials []contract.StudyPipelineMaterial) []contract.PDFDocument {
+	if len(materials) == 0 {
+		return documents
+	}
+	selected := make(map[string]bool, len(materials))
+	for _, material := range materials {
+		if strings.TrimSpace(material.ID) != "" {
+			selected[material.ID] = true
+		}
+	}
+	if len(selected) == 0 {
+		return documents
+	}
+	filtered := make([]contract.PDFDocument, 0, len(documents))
+	for _, document := range documents {
+		if selected[document.Resource.ID] {
+			filtered = append(filtered, document)
+		}
+	}
+	return filtered
 }
 
 func curatedOutputsByResource(root string, courseID string, materials []contract.StudyPipelineMaterial) map[string]string {
