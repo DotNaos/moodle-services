@@ -589,6 +589,9 @@ func writeCurated(root string, courseID string, resources []moodle.Resource, now
 	if err := runCodexCleanupHook(courseID, dir); err != nil {
 		return err
 	}
+	if err := reconcileCuratedVisualAssets(root, courseID, dir, plan); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -833,7 +836,7 @@ func curatedVisualAssetMarkdown(root string, courseID string, material contract.
 	}
 	figures := []string{}
 	for _, asset := range document.Assets {
-		if !isCuratedVisualAsset(asset) || strings.TrimSpace(asset.Path) == "" || assetReferenced(existingOutput, asset) {
+		if !isCuratedVisualAsset(asset) || strings.TrimSpace(asset.Path) == "" || looksDecorativeAsset(*document, asset) || assetReferenced(existingOutput, asset) {
 			continue
 		}
 		figures = append(figures, curatedAssetFigure(courseID, asset))
@@ -842,6 +845,46 @@ func curatedVisualAssetMarkdown(root string, courseID string, material contract.
 		return ""
 	}
 	return "## PDF-Bilder\n\n" + strings.Join(figures, "\n\n")
+}
+
+func reconcileCuratedVisualAssets(root string, courseID string, curatedDir string, plan contract.StudyPipelineResponse) error {
+	scriptPath := filepath.Join(curatedDir, "script", "Script.mdx")
+	for _, material := range plan.Materials {
+		switch material.Type {
+		case "task":
+			path := filepath.Join(curatedDir, "tasks", safeSegment(taskID(material))+".mdx")
+			if err := appendMissingCuratedVisualAssets(root, courseID, material, path); err != nil {
+				return err
+			}
+		case "solution":
+			path := filepath.Join(curatedDir, "tasks", "solutions", safeSegment(taskID(material))+".mdx")
+			if err := appendMissingCuratedVisualAssets(root, courseID, material, path); err != nil {
+				return err
+			}
+		case "slide", "script":
+			if err := appendMissingCuratedVisualAssets(root, courseID, material, scriptPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func appendMissingCuratedVisualAssets(root string, courseID string, material contract.StudyPipelineMaterial, outputPath string) error {
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	content := string(data)
+	assets := curatedVisualAssetMarkdown(root, courseID, material, content)
+	if strings.TrimSpace(assets) == "" {
+		return nil
+	}
+	updated := strings.TrimRight(content, "\n") + "\n\n" + assets + "\n"
+	return os.WriteFile(outputPath, []byte(updated), 0o644)
 }
 
 func isCuratedVisualAsset(asset contract.DocumentAsset) bool {

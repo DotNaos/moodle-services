@@ -113,6 +113,104 @@ func TestCuratedStageWritesElementAccountabilityAndUsesExtractedImages(t *testin
 	}
 }
 
+func TestCuratedStageRestoresMeaningfulImagesAfterCleanupHook(t *testing.T) {
+	root := t.TempDir()
+	courseID := "22584"
+	now := time.Date(2026, 6, 14, 10, 12, 0, 0, time.UTC)
+	resources := []moodle.Resource{
+		{ID: "947711", Name: "Aufgabenblatt 01", FileType: "pdf", SectionName: "Week 1"},
+	}
+	writeExtractedFixture(t, root, courseID, "tasks", "947711-Aufgabenblatt 01", "Aufgabe 1\n\nInterpretieren Sie das Roofline-Diagramm.")
+	writeLatestExtractedDocumentFixture(t, root, courseID, contract.ExtractedDocumentsResponse{
+		CourseID:     courseID,
+		RunID:        "baseline-20260614T101200Z",
+		GeneratedAt:  now.Format(time.RFC3339),
+		Engine:       extractedDocumentEngine,
+		ArtifactRoot: filepath.Join(root, "courses", courseID),
+		Documents: []contract.PDFDocument{{
+			ID: "947711",
+			Resource: contract.StudyPipelineMaterial{
+				ID:       "947711",
+				Name:     "Aufgabenblatt 01",
+				Type:     "task",
+				FileType: "pdf",
+			},
+			RunID:  "baseline-20260614T101200Z",
+			Engine: extractedDocumentEngine,
+			Status: "machine-extracted",
+			Pages: []contract.PDFPage{{
+				ID:             "947711-page-001",
+				PageNumber:     1,
+				Text:           "Aufgabe 1\n\nInterpretieren Sie das Roofline-Diagramm.",
+				Markdown:       "Aufgabe 1\n\nInterpretieren Sie das Roofline-Diagramm.",
+				PreviewAssetID: "page-001-preview",
+				Blocks: []contract.DocumentBlock{{
+					ID:         "947711-p001-b001",
+					PageNumber: 1,
+					Type:       "paragraph",
+					Label:      "task_paragraph",
+					Text:       "Interpretieren Sie das Roofline-Diagramm.",
+					Markdown:   "Interpretieren Sie das Roofline-Diagramm.",
+					Source:     "extracted_text",
+					Confidence: "high",
+				}},
+			}},
+			Assets: []contract.DocumentAsset{
+				{
+					ID:         "page-001-preview",
+					Kind:       "page_preview",
+					Path:       filepath.Join(root, "courses", courseID, "extracted", "runs", "baseline-20260614T101200Z", "assets", "947711", "pages", "page-1.png"),
+					PageNumber: 1,
+					MimeType:   "image/png",
+					Role:       "page_preview",
+				},
+				{
+					ID:         "embedded-image-001",
+					Kind:       "embedded_image",
+					Path:       filepath.Join(root, "courses", courseID, "extracted", "runs", "baseline-20260614T101200Z", "assets", "947711", "images", "roofline.png"),
+					PageNumber: 1,
+					MimeType:   "image/png",
+					Role:       "extracted_image",
+				},
+			},
+		}},
+	})
+	hook := filepath.Join(root, "remove-images.sh")
+	if err := os.WriteFile(hook, []byte(`#!/bin/sh
+set -eu
+for file in "$MOODLE_STUDY_TASKS_DIR"/*.mdx; do
+  [ -f "$file" ] || continue
+  printf '%s\n' '---' 'status: codex-improved' '---' '' '# Aufgabenblatt 01' '' 'Interpretieren Sie das Roofline-Diagramm.' > "$file"
+done
+`), 0o755); err != nil {
+		t.Fatalf("write hook: %v", err)
+	}
+	t.Setenv(EnvCodexCommand, hook)
+
+	response, err := RunStage(courseID, resources, "curated", RunOptions{
+		Root: root,
+		Now:  now,
+	})
+	if err != nil {
+		t.Fatalf("RunStage curated: %v", err)
+	}
+	imageDecision := response.ElementDecisions[len(response.ElementDecisions)-1]
+	if imageDecision.SourceAssetID != "embedded-image-001" || imageDecision.Outcome != "used_in_output" {
+		t.Fatalf("expected meaningful image to be restored and used, got %#v", imageDecision)
+	}
+	taskPath := filepath.Join(root, "courses", courseID, "curated", "tasks", safeSegment(taskID(contract.StudyPipelineMaterial{
+		ID:   "947711",
+		Name: "Aufgabenblatt 01",
+	}))+".mdx")
+	taskOutput, err := os.ReadFile(taskPath)
+	if err != nil {
+		t.Fatalf("read curated task: %v", err)
+	}
+	if !strings.Contains(string(taskOutput), "embedded-image-001") || !strings.Contains(string(taskOutput), "roofline.png") {
+		t.Fatalf("expected reconciliation to restore meaningful image, got %q", string(taskOutput))
+	}
+}
+
 func writeLatestExtractedDocumentFixture(t *testing.T, root string, courseID string, response contract.ExtractedDocumentsResponse) {
 	t.Helper()
 	path := filepath.Join(root, "courses", safeSegment(courseID), "extracted", "latest-documents.json")
