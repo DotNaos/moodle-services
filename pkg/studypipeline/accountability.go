@@ -19,6 +19,22 @@ type curatedAccountabilityReport struct {
 	ElementDecisions []store.StudyPipelineElementDecision
 }
 
+func (report curatedAccountabilityReport) CompletionError() error {
+	if report.Checklist == nil {
+		return fmt.Errorf("element accountability incomplete: curation checklist missing")
+	}
+	if strings.TrimSpace(report.Checklist.Status) != "complete" {
+		return fmt.Errorf("element accountability incomplete: curation checklist status is %q", report.Checklist.Status)
+	}
+	for _, decision := range report.ElementDecisions {
+		switch strings.TrimSpace(decision.Outcome) {
+		case "needs_review", "failed":
+			return fmt.Errorf("element accountability incomplete: %s is %s", decision.SourceElementID, decision.Outcome)
+		}
+	}
+	return nil
+}
+
 type elementAccountabilityManifest struct {
 	CourseID         string                               `json:"courseId"`
 	RunID            string                               `json:"runId"`

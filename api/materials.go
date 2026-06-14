@@ -73,7 +73,14 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 			response, err := studypipeline.RunStage(courseID, materials, stage, options)
 			workCtx := context.WithoutCancel(r.Context())
 			if err != nil {
-				if recordErr := recordStudyPipelineFailure(workCtx, studyStore, studyUserID, courseID, stage, options, err); recordErr != nil {
+				if response.CourseID != "" {
+					if run, recordErr := svc.RecordStudyPipelineResponse(workCtx, studyStore, studyUserID, response); recordErr != nil {
+						svc.WriteError(w, recordErr)
+						return
+					} else if run.ID != "" {
+						response.Run = &run
+					}
+				} else if recordErr := recordStudyPipelineFailure(workCtx, studyStore, studyUserID, courseID, stage, options, err); recordErr != nil {
 					svc.WriteError(w, recordErr)
 					return
 				}
@@ -99,7 +106,14 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 		response, err := studypipeline.RunStage(courseID, materials, defaultStage(stage), options)
 		workCtx := context.WithoutCancel(r.Context())
 		if err != nil {
-			if recordErr := recordStudyPipelineFailure(workCtx, studyStore, studyUserID, courseID, defaultStage(stage), options, err); recordErr != nil {
+			if response.CourseID != "" {
+				if run, recordErr := svc.RecordStudyPipelineResponse(workCtx, studyStore, studyUserID, response); recordErr != nil {
+					svc.WriteError(w, recordErr)
+					return
+				} else if run.ID != "" {
+					response.Run = &run
+				}
+			} else if recordErr := recordStudyPipelineFailure(workCtx, studyStore, studyUserID, courseID, defaultStage(stage), options, err); recordErr != nil {
 				svc.WriteError(w, recordErr)
 				return
 			}
@@ -147,7 +161,18 @@ func handleStudyPipeline(w http.ResponseWriter, r *http.Request, service svc.Ser
 				result.Status = "failed"
 				result.Steps[index].Status = "failed"
 				result.Steps[index].Error = runErr.Error()
-				if recordErr := recordStudyPipelineFailure(workCtx, studyStore, studyUserID, courseID, stage, stepOptions, runErr); recordErr != nil {
+				if response.CourseID != "" {
+					if run, recordErr := svc.RecordStudyPipelineResponse(workCtx, studyStore, studyUserID, response); recordErr != nil {
+						result.Steps[index].Error = recordErr.Error()
+					} else {
+						if run.ID != "" {
+							response.Run = &run
+						}
+						result.Steps[index].Response = &response
+						result.Steps[index].Run = response.Run
+						result.Response = &response
+					}
+				} else if recordErr := recordStudyPipelineFailure(workCtx, studyStore, studyUserID, courseID, stage, stepOptions, runErr); recordErr != nil {
 					result.Steps[index].Error = recordErr.Error()
 				}
 				break

@@ -177,6 +177,9 @@ func RunStage(courseID string, resources []moodle.Resource, stage string, option
 		response.ArtifactRefs = accountability.ArtifactRefs
 		response.CurationChecklist = accountability.Checklist
 		response.ElementDecisions = accountability.ElementDecisions
+		if err := accountability.CompletionError(); err != nil {
+			return response, err
+		}
 	}
 	return response, nil
 }

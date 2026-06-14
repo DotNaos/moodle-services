@@ -310,8 +310,14 @@ func TestCuratedStageDoesNotDownloadRawMaterials(t *testing.T) {
 		Now:        time.Unix(0, 0),
 		Downloader: failingDownloader{},
 	})
-	if err != nil {
-		t.Fatalf("curated stage should not call downloader: %v", err)
+	if err == nil {
+		t.Fatalf("expected curated stage to fail without complete element accountability")
+	}
+	if strings.Contains(err.Error(), "downloader should not be called") {
+		t.Fatalf("curated stage called downloader: %v", err)
+	}
+	if !strings.Contains(err.Error(), "element accountability incomplete") {
+		t.Fatalf("expected accountability error, got %v", err)
 	}
 }
 
@@ -358,8 +364,11 @@ func TestCuratedStageRunsExtractionWhenMissing(t *testing.T) {
 		Now:        time.Unix(0, 0),
 		Downloader: staticDownloader{data: []byte("real extracted lecture text"), contentType: "text/plain"},
 	})
-	if err != nil {
-		t.Fatalf("RunStage curated: %v", err)
+	if err == nil {
+		t.Fatalf("expected curated stage to fail without complete element accountability")
+	}
+	if !strings.Contains(err.Error(), "element accountability incomplete") {
+		t.Fatalf("expected accountability error, got %v", err)
 	}
 
 	script, err := os.ReadFile(filepath.Join(root, "courses", courseID, "curated", "script", "Script.mdx"))
