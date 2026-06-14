@@ -11,7 +11,7 @@ on:
       image:
         description: Container image to deploy
         required: false
-        default: ghcr.io/dotnaos/moodle-services:latest
+        default: ghcr.io/dotnaos/moodle-services:latest-amd64
         type: string
 
 concurrency:
@@ -35,7 +35,7 @@ jobs:
           VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
           VPS_DEPLOY_DIR: ${{ secrets.VPS_DEPLOY_DIR }}
           VPS_HEALTH_URL: ${{ secrets.VPS_HEALTH_URL }}
-          MOODLE_DOCKER_IMAGE: ${{ inputs.image || 'ghcr.io/dotnaos/moodle-services:latest' }}
+          MOODLE_DOCKER_IMAGE: ${{ inputs.image || 'ghcr.io/dotnaos/moodle-services:latest-amd64' }}
         run: |
           set -euo pipefail
 

@@ -21,6 +21,16 @@ Regular backend changes should only rebuild the service image. The heavy runtime
 base image is rebuilt only when the dependency inputs above change or when the
 base image tag is missing in GHCR.
 
+The release workflow keeps the VPS deploy path fast by publishing the service
+image for `linux/amd64` first:
+
+- `ghcr.io/dotnaos/moodle-services:<tag>-amd64`
+- `ghcr.io/dotnaos/moodle-services:latest-amd64`
+
+The VPS deploy workflow uses `latest-amd64` by default. Multi-arch images are
+kept outside the critical deploy path and can be published manually with the
+`Container Image Multi-Arch` workflow when an ARM image is needed.
+
 For local verification:
 
 ```bash
