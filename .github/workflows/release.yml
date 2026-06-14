@@ -185,8 +185,6 @@ jobs:
         with:
           ref: ${{ needs.resolve-release.outputs.ref }}
 
-      - uses: docker/setup-qemu-action@v3
-
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
@@ -208,13 +206,15 @@ jobs:
           images: ${{ steps.image.outputs.name }}
           tags: |
             type=raw,value=${{ needs.resolve-release.outputs.tag }}
+            type=raw,value=${{ needs.resolve-release.outputs.tag }}-amd64
             type=raw,value=latest,enable=${{ needs.resolve-release.outputs.prerelease != 'true' }}
+            type=raw,value=latest-amd64,enable=${{ needs.resolve-release.outputs.prerelease != 'true' }}
 
       - name: Build and push container image
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
